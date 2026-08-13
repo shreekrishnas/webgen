@@ -109,6 +109,24 @@ app = FastAPI(title="WebinarIQ Analytics", version="2.0.0", lifespan=lifespan)
 
 try:
     models.Base.metadata.create_all(bind=engine)
+    from sqlalchemy import text as _text_init
+    _is_pg = "postgresql" in str(engine.url)
+    _lt_ddl = """CREATE TABLE IF NOT EXISTS lead_tags (
+            id SERIAL PRIMARY KEY,
+            email VARCHAR NOT NULL UNIQUE,
+            tag VARCHAR,
+            note TEXT,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""" if _is_pg else """CREATE TABLE IF NOT EXISTS lead_tags (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email VARCHAR NOT NULL UNIQUE,
+            tag VARCHAR,
+            note TEXT,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )"""
+    with engine.connect() as _conn:
+        _conn.execute(_text_init(_lt_ddl))
+        _conn.commit()
     from seed_data import seed_database
     seed_database()
     logger.info("DB tables created and seed data applied")
