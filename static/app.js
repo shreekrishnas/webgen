@@ -693,12 +693,12 @@ function renderKpiBanner() {
   ];
 
   return kpis.map(k => `
-    <div class="kpi-card${k.alert ? ' alert' : ''}" ${k.label==='Follow-up Pending'?'onclick="showFollowupPendingModal()" style="cursor:pointer" title="Click to see pending follow-ups"':''}>
+    <div class="kpi-card${k.alert ? ' alert' : ''}" style="background:var(--surface-card);border:1px solid var(--border-subtle);border-radius:1rem;padding:1rem 1.1rem;box-shadow:0 2px 12px rgba(0,0,0,0.06);border-left:4px solid ${k.alert ? '#f43f5e' : 'var(--border-subtle)'}" ${k.label==='Follow-up Pending'?'onclick="showFollowupPendingModal()" style="cursor:pointer;background:var(--surface-card);border:1px solid var(--border-subtle);border-radius:1rem;padding:1rem 1.1rem;box-shadow:0 2px 12px rgba(0,0,0,0.06);border-left:4px solid #f43f5e" title="Click to see pending follow-ups"':''}>
       <div class="kpi-card-head">
-        <span class="kpi-card-label">${k.label}${k.tooltip ? `<span class="metric-tooltip" title="${k.tooltip.replace(/"/g,'&quot;')}">&#x24D8;</span>` : ''}</span>
+        <span class="kpi-card-label" style="color:var(--text-muted)">${k.label}${k.tooltip ? `<span class="metric-tooltip" title="${k.tooltip.replace(/"/g,'&quot;')}">&#x24D8;</span>` : ''}</span>
         <span class="kpi-card-icon">${k.icon}</span>
       </div>
-      <div class="kpi-card-value">${k.value}</div>
+      <div class="kpi-card-value" style="color:var(--text-primary)">${k.value}</div>
       <div class="kpi-card-trend ${k.trendUp === true ? 'trend-up' : k.trendUp === false ? 'trend-down' : 'trend-neutral'}">
         ${k.arrow || ''}
         <span>${k.trend}</span>
@@ -738,7 +738,7 @@ async function showFollowupPendingModal() {
     const el = document.getElementById('followup-pending-list');
     if (!el) return;
     if (!leads.length) {
-      el.innerHTML = '<div class="empty-state" style="padding:20px 0"><div class="empty-title">All caught up!</div><div class="empty-sub">No pending follow-ups found.</div></div>';
+      el.innerHTML = '<div class="empty-state" style="padding:20px 0"><div class="empty-title" style="color:var(--text-primary)">All caught up!</div><div class="empty-sub" style="color:var(--text-muted)">No pending follow-ups found.</div></div>';
       return;
     }
     el.innerHTML = `
@@ -1063,7 +1063,7 @@ function renderHome() {
           <div class="wb-grid">${cards}</div>
         </div>`;
       }).join('');
-    mainContent = `<div class="reveal rd3">${seriesHtml || '<div class="empty-state"><div class="empty-title">No series yet</div><div class="empty-sub">Add a Series name when creating or editing a webinar.</div></div>'}</div>`;
+    mainContent = `<div class="reveal rd3">${seriesHtml || '<div class="empty-state" style="background:var(--surface-card);border:1px solid var(--border-subtle);border-radius:1rem;padding:2rem;text-align:center"><div class="empty-title" style="color:var(--text-primary)">No series yet</div><div class="empty-sub" style="color:var(--text-muted)">Add a Series name when creating or editing a webinar.</div></div>'}</div>`;
   } else {
     // Activity feed
     const feedHTML = buildActivityFeed().map(item => `
@@ -1119,7 +1119,7 @@ function renderHome() {
           <div class="wb-list-card-head">
             <div class="wb-list-card-title">All Webinars <span style="font-size:12px;color:var(--text-3);font-weight:400">${countLabel}</span></div>
             <input class="wb-list-search" placeholder="Search webinars…" oninput="onSearch(this.value)" value="${esc(S.search)}" />
-            <select class="filter-select" onchange="setFilter('speaker',this.value)">
+            <select class="filter-select glass-input" onchange="setFilter('speaker',this.value)">
               <option value="all">All Speakers</option>
               ${speakerOptions}
             </select>
@@ -1148,7 +1148,7 @@ function renderHome() {
           <div style="padding:32px;text-align:center;color:var(--text-3);font-size:13px">
             No webinars match your current filters.
             <div style="margin-top:10px">
-              <button class="btn btn-ghost btn-sm" onclick="S.search='';onSearch('');setChipFilter('all');setFilter('speaker','all');setFilter('icp','all')">Clear filters</button>
+              <button class="btn btn-secondary btn-sm" style="background:rgba(255,255,255,0.70);border:1px solid var(--border-subtle);border-radius:0.875rem;font-weight:600" onclick="S.search='';onSearch('');setChipFilter('all');setFilter('speaker','all');setFilter('icp','all')">Clear filters</button>
             </div>
           </div>`}
         </div>
@@ -1181,7 +1181,7 @@ function renderHome() {
           </button>
         </div>
       </div>
-      <div class="kpi-banner reveal rd1">${renderKpiBanner()}</div>
+      <div class="kpi-banner reveal rd1" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px">${renderKpiBanner()}</div>
       <div class="dash-mid-row reveal rd2">
         ${renderAttendanceChart()}
         ${renderStatusBreakdown()}
@@ -1295,7 +1295,7 @@ async function renderWebinarDetail(id) {
     loadNotes(id).catch(()=>{});
     loadWebinarFunnel(id, w).catch(()=>{});
   } catch(e) {
-    setContent(`<div class="empty-state"><div class="empty-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div><div class="empty-title">Failed to load webinar</div><div class="empty-sub">${esc(e.message||'')}</div></div>`);
+    setContent(`<div class="empty-state" style="background:var(--surface-card);border:1px solid var(--border-subtle);border-radius:1rem;padding:2rem;text-align:center"><div class="empty-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div><div class="empty-title" style="color:var(--text-primary)">Failed to load webinar</div><div class="empty-sub" style="color:var(--text-muted)">${esc(e.message||'')}</div></div>`);
   }
 }
 
@@ -2113,8 +2113,8 @@ async function renderSpeakers() {
     <div>
       <div class="page-hd">
         <div>
-          <h1 class="page-title">Speakers</h1>
-          <p class="page-sub">${S.speakers.length} speakers</p>
+          <h1 class="page-title" style="color:var(--text-primary)">Speakers</h1>
+          <p class="page-sub" style="color:var(--text-secondary)">${S.speakers.length} speakers</p>
         </div>
       </div>
       <div id="spk-perf-section"><div class="pg-loading"><div class="spinner"></div><p>Loading performance data…</p></div></div>
@@ -2259,10 +2259,10 @@ async function renderSpeakerDetail(id) {
           <span class="sec-title">Webinar History</span>
           <span style="font-size:12px;color:var(--text-3)">${sp.total_webinars} total</span>
         </div>
-        ${wbItems || '<div class="empty-state"><div class="empty-icon"><svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" opacity="0.25"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg></div><div class="empty-title">No webinars yet</div></div>'}
+        ${wbItems || '<div class="empty-state" style="background:var(--surface-card);border:1px solid var(--border-subtle);border-radius:1rem;padding:2rem;text-align:center"><div class="empty-icon"><svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" opacity="0.25"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg></div><div class="empty-title" style="color:var(--text-primary)">No webinars yet</div></div>'}
       </div>`);
   } catch(e) {
-    setContent('<div class="empty-state"><div class="empty-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div><div class="empty-title">Failed to load speaker data</div></div>');
+    setContent('<div class="empty-state" style="background:var(--surface-card);border:1px solid var(--border-subtle);border-radius:1rem;padding:2rem;text-align:center"><div class="empty-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div><div class="empty-title" style="color:var(--text-primary)">Failed to load speaker data</div></div>');
   }
 }
 
@@ -2298,10 +2298,10 @@ async function renderRepeatAudience(container) {
               <thead><tr><th>Name / Email</th><th style="text-align:center">Webinars</th><th>Last Seen</th><th>Action</th></tr></thead>
               <tbody>${rows}</tbody>
             </table>
-          </div>` : '<div class="empty-state"><div class="empty-title">No repeat attendees yet</div><div class="empty-sub">As more people attend multiple webinars, they will appear here.</div></div>'}
+          </div>` : '<div class="empty-state" style="background:var(--surface-card);border:1px solid var(--border-subtle);border-radius:1rem;padding:2rem;text-align:center"><div class="empty-title" style="color:var(--text-primary)">No repeat attendees yet</div><div class="empty-sub" style="color:var(--text-muted)">As more people attend multiple webinars, they will appear here.</div></div>'}
       </div>`;
   } catch(e) {
-    container.innerHTML = `<div class="empty-state"><div class="empty-title">Failed to load repeat audience data</div></div>`;
+    container.innerHTML = `<div class="empty-state" style="background:var(--surface-card);border:1px solid var(--border-subtle);border-radius:1rem;padding:2rem;text-align:center"><div class="empty-title" style="color:var(--text-primary)">Failed to load repeat audience data</div></div>`;
   }
 }
 
@@ -2334,7 +2334,7 @@ async function renderLeadQuality(container) {
         </div>
       </div>`;
   } catch(e) {
-    container.innerHTML = `<div class="empty-state"><div class="empty-title">Failed to load lead quality</div></div>`;
+    container.innerHTML = `<div class="empty-state" style="background:var(--surface-card);border:1px solid var(--border-subtle);border-radius:1rem;padding:2rem;text-align:center"><div class="empty-title" style="color:var(--text-primary)">Failed to load lead quality</div></div>`;
   }
 }
 
@@ -2468,18 +2468,18 @@ async function renderLeaderboard(speakerId, webinarId) {
             }).join('')}
           </tbody>
         </table>
-      </div>` : `<div class="lb-empty">No attendance data yet.<br>Upload attendee files to populate the leaderboard.</div>`;
+      </div>` : `<div class="lb-empty" style="background:var(--surface-card);border:1px solid var(--border-subtle);border-radius:1rem;padding:2rem;text-align:center;color:var(--text-muted)">No attendance data yet.<br>Upload attendee files to populate the leaderboard.</div>`;
 
     // Alternate leaderboard views (client-side computed from S.webinars)
     S._lbView = S._lbView || 'attendees';
     const lbViewTabs = `
-      <div class="lb-view-tabs">
-        <button class="lb-vtab ${S._lbView==='attendees'?'active':''}" onclick="S._lbView='attendees';renderLeaderboard()">Top Attendees</button>
-        <button class="lb-vtab ${S._lbView==='webinars'?'active':''}" onclick="S._lbView='webinars';renderLeaderboard()">Best Webinars</button>
-        <button class="lb-vtab ${S._lbView==='speakers'?'active':''}" onclick="S._lbView='speakers';renderLeaderboard()">Best Speakers</button>
-        <button class="lb-vtab ${S._lbView==='icp'?'active':''}" onclick="S._lbView='icp';renderLeaderboard()">Best ICP</button>
-        <button class="lb-vtab ${S._lbView==='repeat'?'active':''}" onclick="S._lbView='repeat';renderLeaderboard()">Repeat Audience</button>
-        <button class="lb-vtab ${S._lbView==='leadquality'?'active':''}" onclick="S._lbView='leadquality';renderLeaderboard()">Lead Quality</button>
+      <div class="lb-view-tabs" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px">
+        <button class="lb-vtab ${S._lbView==='attendees'?'active':''}" style="border-radius:9999px;padding:6px 16px;font-weight:600;border:1px solid var(--border-subtle);background:${S._lbView==='attendees'?'var(--surface-card)':'rgba(255,255,255,0.70)'};color:var(--text-primary)" onclick="S._lbView='attendees';renderLeaderboard()">Top Attendees</button>
+        <button class="lb-vtab ${S._lbView==='webinars'?'active':''}" style="border-radius:9999px;padding:6px 16px;font-weight:600;border:1px solid var(--border-subtle);background:${S._lbView==='webinars'?'var(--surface-card)':'rgba(255,255,255,0.70)'};color:var(--text-primary)" onclick="S._lbView='webinars';renderLeaderboard()">Best Webinars</button>
+        <button class="lb-vtab ${S._lbView==='speakers'?'active':''}" style="border-radius:9999px;padding:6px 16px;font-weight:600;border:1px solid var(--border-subtle);background:${S._lbView==='speakers'?'var(--surface-card)':'rgba(255,255,255,0.70)'};color:var(--text-primary)" onclick="S._lbView='speakers';renderLeaderboard()">Best Speakers</button>
+        <button class="lb-vtab ${S._lbView==='icp'?'active':''}" style="border-radius:9999px;padding:6px 16px;font-weight:600;border:1px solid var(--border-subtle);background:${S._lbView==='icp'?'var(--surface-card)':'rgba(255,255,255,0.70)'};color:var(--text-primary)" onclick="S._lbView='icp';renderLeaderboard()">Best ICP</button>
+        <button class="lb-vtab ${S._lbView==='repeat'?'active':''}" style="border-radius:9999px;padding:6px 16px;font-weight:600;border:1px solid var(--border-subtle);background:${S._lbView==='repeat'?'var(--surface-card)':'rgba(255,255,255,0.70)'};color:var(--text-primary)" onclick="S._lbView='repeat';renderLeaderboard()">Repeat Audience</button>
+        <button class="lb-vtab ${S._lbView==='leadquality'?'active':''}" style="border-radius:9999px;padding:6px 16px;font-weight:600;border:1px solid var(--border-subtle);background:${S._lbView==='leadquality'?'var(--surface-card)':'rgba(255,255,255,0.70)'};color:var(--text-primary)" onclick="S._lbView='leadquality';renderLeaderboard()">Lead Quality</button>
       </div>`;
 
     let altViewHTML = '';
@@ -2489,7 +2489,7 @@ async function renderLeaderboard(speakerId, webinarId) {
         const score = w.performance_score || 0;
         const sc = score>=80?'#10b981':score>=60?'#6366f1':score>=40?'#f59e0b':'#f43f5e';
         return `<tr><td>${rankHTML(i+1)}</td><td><div class="wb-list-name" title="${esc(w.title)}">${esc(w.title)}</div></td><td style="font-size:12px;color:var(--text-2)">${esc(w.speaker_name||'—')}</td><td><span class="icp-badge icp-${(w.icp||'others').toLowerCase().replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,'')}">${esc(w.icp||'Others')}</span></td><td style="text-align:right;font-weight:600;color:var(--c-reg)">${fmt(w.total_registrations)}</td><td style="text-align:right;font-weight:600;color:#059669">${(w.attendance_rate||0).toFixed(1)}%</td><td style="text-align:right"><span style="font-size:12px;font-weight:700;color:${sc}">${score}</span></td></tr>`;
-      }).join('')}</tbody></table></div>` : `<div class="lb-empty">No completed webinars yet.</div>`;
+      }).join('')}</tbody></table></div>` : `<div class="lb-empty" style="background:var(--surface-card);border:1px solid var(--border-subtle);border-radius:1rem;padding:2rem;text-align:center;color:var(--text-muted)">No completed webinars yet.</div>`;
     } else if (S._lbView === 'speakers') {
       const spkData = {};
       S.webinars.filter(w=>w.status==='completed').forEach(w => {
@@ -2500,7 +2500,7 @@ async function renderLeaderboard(speakerId, webinarId) {
         spkData[sp].count++;
       });
       const sortedSp = Object.entries(spkData).sort((a,b)=>(b[1].totalRate/b[1].count)-(a[1].totalRate/a[1].count));
-      altViewHTML = sortedSp.length ? `<div class="lb-table-wrap"><table class="lb-table"><thead><tr><th>Rank</th><th>Speaker</th><th style="text-align:right">Webinars</th><th style="text-align:right">Total Regs</th><th style="text-align:right">Avg Att Rate</th></tr></thead><tbody>${sortedSp.map(([name,d],i)=>`<tr><td>${rankHTML(i+1)}</td><td><div style="font-weight:600;font-size:13px">${esc(name)}</div></td><td style="text-align:right;font-weight:600;color:var(--c-reg)">${d.count}</td><td style="text-align:right;color:var(--text-2)">${fmt(d.regs)}</td><td style="text-align:right;font-weight:700;color:#059669">${(d.totalRate/d.count).toFixed(1)}%</td></tr>`).join('')}</tbody></table></div>` : `<div class="lb-empty">No completed webinars yet.</div>`;
+      altViewHTML = sortedSp.length ? `<div class="lb-table-wrap"><table class="lb-table"><thead><tr><th>Rank</th><th>Speaker</th><th style="text-align:right">Webinars</th><th style="text-align:right">Total Regs</th><th style="text-align:right">Avg Att Rate</th></tr></thead><tbody>${sortedSp.map(([name,d],i)=>`<tr><td>${rankHTML(i+1)}</td><td><div style="font-weight:600;font-size:13px">${esc(name)}</div></td><td style="text-align:right;font-weight:600;color:var(--c-reg)">${d.count}</td><td style="text-align:right;color:var(--text-2)">${fmt(d.regs)}</td><td style="text-align:right;font-weight:700;color:#059669">${(d.totalRate/d.count).toFixed(1)}%</td></tr>`).join('')}</tbody></table></div>` : `<div class="lb-empty" style="background:var(--surface-card);border:1px solid var(--border-subtle);border-radius:1rem;padding:2rem;text-align:center;color:var(--text-muted)">No completed webinars yet.</div>`;
     } else if (S._lbView === 'icp') {
       const icpData = {};
       S.webinars.filter(w=>w.status==='completed').forEach(w => {
@@ -2511,15 +2511,15 @@ async function renderLeaderboard(speakerId, webinarId) {
         icpData[icp].count++;
       });
       const sortedIcp = Object.entries(icpData).sort((a,b)=>(b[1].totalRate/b[1].count)-(a[1].totalRate/a[1].count));
-      altViewHTML = sortedIcp.length ? `<div class="lb-table-wrap"><table class="lb-table"><thead><tr><th>Rank</th><th>ICP</th><th style="text-align:right">Webinars</th><th style="text-align:right">Total Regs</th><th style="text-align:right">Avg Att Rate</th></tr></thead><tbody>${sortedIcp.map(([icp,d],i)=>`<tr><td>${rankHTML(i+1)}</td><td><span class="icp-badge icp-${icp.toLowerCase().replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,'')}">${esc(icp)}</span></td><td style="text-align:right;font-weight:600;color:var(--c-reg)">${d.count}</td><td style="text-align:right;color:var(--text-2)">${fmt(d.regs)}</td><td style="text-align:right;font-weight:700;color:#059669">${(d.totalRate/d.count).toFixed(1)}%</td></tr>`).join('')}</tbody></table></div>` : `<div class="lb-empty">No completed webinars yet.</div>`;
+      altViewHTML = sortedIcp.length ? `<div class="lb-table-wrap"><table class="lb-table"><thead><tr><th>Rank</th><th>ICP</th><th style="text-align:right">Webinars</th><th style="text-align:right">Total Regs</th><th style="text-align:right">Avg Att Rate</th></tr></thead><tbody>${sortedIcp.map(([icp,d],i)=>`<tr><td>${rankHTML(i+1)}</td><td><span class="icp-badge icp-${icp.toLowerCase().replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,'')}">${esc(icp)}</span></td><td style="text-align:right;font-weight:600;color:var(--c-reg)">${d.count}</td><td style="text-align:right;color:var(--text-2)">${fmt(d.regs)}</td><td style="text-align:right;font-weight:700;color:#059669">${(d.totalRate/d.count).toFixed(1)}%</td></tr>`).join('')}</tbody></table></div>` : `<div class="lb-empty" style="background:var(--surface-card);border:1px solid var(--border-subtle);border-radius:1rem;padding:2rem;text-align:center;color:var(--text-muted)">No completed webinars yet.</div>`;
     }
 
     setContent(`
       <div>
         <div class="page-hd">
           <div>
-            <h1 class="page-title">Attendee Leaderboard</h1>
-            <p class="page-sub">Top attendees ranked by score · ${lb.length} entries shown</p>
+            <h1 class="page-title" style="color:var(--text-primary)">Attendee Leaderboard</h1>
+            <p class="page-sub" style="color:var(--text-secondary)">Top attendees ranked by score · ${lb.length} entries shown</p>
           </div>
           <button class="btn btn-primary" onclick="exportLeaderboardCSV()" style="display:inline-flex;align-items:center;gap:6px">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -2531,27 +2531,27 @@ async function renderLeaderboard(speakerId, webinarId) {
 
         ${(S._lbView === 'repeat' || S._lbView === 'leadquality') ? '<div id="lb-alt-content"></div>' : S._lbView !== 'attendees' ? altViewHTML : `
         <div class="lb-filters">
-          <select class="filter-select" onchange="S._lbMetric=this.value;renderLeaderboard()" title="Sort by metric">
+          <select class="filter-select glass-input" onchange="S._lbMetric=this.value;renderLeaderboard()" title="Sort by metric">
             <option value="score"    ${metricF==='score'?'selected':''}>Score</option>
             <option value="webinars" ${metricF==='webinars'?'selected':''}>Webinars Attended</option>
             <option value="duration" ${metricF==='duration'?'selected':''}>Total Duration</option>
             <option value="avg_min"  ${metricF==='avg_min'?'selected':''}>Avg Engagement</option>
           </select>
-          <select class="filter-select" onchange="S._lbPeriod=this.value;renderLeaderboard()" title="Time period">
+          <select class="filter-select glass-input" onchange="S._lbPeriod=this.value;renderLeaderboard()" title="Time period">
             <option value="all"     ${periodF==='all'?'selected':''}>All Time</option>
             <option value="week"    ${periodF==='week'?'selected':''}>Last 7 Days</option>
             <option value="month"   ${periodF==='month'?'selected':''}>Last 30 Days</option>
             <option value="quarter" ${periodF==='quarter'?'selected':''}>Last 90 Days</option>
           </select>
-          <select class="filter-select" onchange="S._lbSpeaker=this.value;S._lbWebinar='';renderLeaderboard()">
+          <select class="filter-select glass-input" onchange="S._lbSpeaker=this.value;S._lbWebinar='';renderLeaderboard()">
             <option value="" ${!selSpeaker?'selected':''}>All Speakers</option>
             ${speakerOpts}
           </select>
-          <select class="filter-select" onchange="S._lbWebinar=this.value;S._lbSpeaker='';renderLeaderboard()">
+          <select class="filter-select glass-input" onchange="S._lbWebinar=this.value;S._lbSpeaker='';renderLeaderboard()">
             <option value="" ${!selWebinar?'selected':''}>All Webinars</option>
             ${webinarOpts}
           </select>
-          ${icpValues.length ? `<select class="filter-select" onchange="S._lbIcp=this.value;renderLeaderboard()">
+          ${icpValues.length ? `<select class="filter-select glass-input" onchange="S._lbIcp=this.value;renderLeaderboard()">
             <option value="all" ${icpF==='all'?'selected':''}>All ICPs</option>
             ${icpValues.map(v=>`<option value="${esc(v)}" ${icpF===v?'selected':''}>${esc(v)}</option>`).join('')}
           </select>` : ''}
@@ -2561,7 +2561,7 @@ async function renderLeaderboard(speakerId, webinarId) {
             <span class="lb-score-dash">to</span>
             <input type="number" class="filter-select lb-score-input" placeholder="max" value="${S._lbScoreMax||''}" onchange="S._lbScoreMax=this.value;renderLeaderboard()" />
           </div>
-          <select class="filter-select" onchange="S._lbReadiness=this.value;renderLeaderboard()">
+          <select class="filter-select glass-input" onchange="S._lbReadiness=this.value;renderLeaderboard()">
             <option value="all" ${readinessF==='all'?'selected':''}>All Leads</option>
             <option value="meeting_ready" ${readinessF==='meeting_ready'?'selected':''}>Meeting Ready</option>
             <option value="hot"  ${readinessF==='hot'?'selected':''}>Hot</option>
@@ -2573,7 +2573,7 @@ async function renderLeaderboard(speakerId, webinarId) {
             <option value="internal" ${readinessF==='internal'?'selected':''}>Internal</option>
             <option value="employee" ${readinessF==='employee'?'selected':''}>Employee</option>
           </select>
-          <button class="btn btn-ghost btn-sm" onclick="S._lbSpeaker='';S._lbWebinar='';S._lbScoreMin='';S._lbScoreMax='';S._lbLimit=50;S._lbReadiness='all';S._lbIcp='all';S._lbMetric='score';S._lbPeriod='all';renderLeaderboard()">Clear Filters</button>
+          <button class="btn btn-secondary btn-sm" style="background:rgba(255,255,255,0.70);border:1px solid var(--border-subtle);border-radius:0.875rem;font-weight:600" onclick="S._lbSpeaker='';S._lbWebinar='';S._lbScoreMin='';S._lbScoreMax='';S._lbLimit=50;S._lbReadiness='all';S._lbIcp='all';S._lbMetric='score';S._lbPeriod='all';renderLeaderboard()">Clear Filters</button>
         </div>
 
         ${tableHTML}
@@ -2582,7 +2582,7 @@ async function renderLeaderboard(speakerId, webinarId) {
           <span class="lb-score-help">Score = 10 pts per webinar attended + bonus for longer sessions</span>
           <div class="lb-show-control">
             <span>Show top:</span>
-            <select class="filter-select" onchange="S._lbLimit=this.value;renderLeaderboard()">
+            <select class="filter-select glass-input" onchange="S._lbLimit=this.value;renderLeaderboard()">
               <option value="20"  ${selLimit==20?'selected':''}>20</option>
               <option value="50"  ${selLimit==50?'selected':''}>50</option>
               <option value="70"  ${selLimit==70?'selected':''}>70</option>
@@ -2603,7 +2603,7 @@ async function renderLeaderboard(speakerId, webinarId) {
       if (altC) renderLeadQuality(altC);
     }
   } catch(e) {
-    setContent('<div class="empty-state"><div class="empty-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div><div class="empty-title">Failed to load leaderboard</div></div>');
+    setContent('<div class="empty-state" style="background:var(--surface-card);border:1px solid var(--border-subtle);border-radius:1rem;padding:2rem;text-align:center"><div class="empty-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div><div class="empty-title" style="color:var(--text-primary)">Failed to load leaderboard</div></div>');
   }
 }
 
@@ -3533,10 +3533,10 @@ async function renderIntelligence() {
     <div class="intel-page">
       <div class="page-hd">
         <div>
-          <h1 class="page-title">Smart Recommendations</h1>
-          <p class="page-sub">AI-powered insights from your webinar data.</p>
+          <h1 class="page-title" style="color:var(--text-primary)">Smart Recommendations</h1>
+          <p class="page-sub" style="color:var(--text-secondary)">AI-powered insights from your webinar data.</p>
         </div>
-        <button class="btn btn-ghost btn-sm" onclick="_intelCache=null;_intelHotLeadsCache=null;_intelInsightsCache=null;renderIntelligence()">Refresh</button>
+        <button class="btn btn-secondary btn-sm" style="background:rgba(255,255,255,0.70);border:1px solid var(--border-subtle);border-radius:0.875rem;font-weight:600" onclick="_intelCache=null;_intelHotLeadsCache=null;_intelInsightsCache=null;renderIntelligence()">Refresh</button>
       </div>
       <div class="intel-tabs">
         <button class="intel-tab ${S._intelTab==='aiinsights'?'active':''}"  onclick="S._intelTab='aiinsights';renderIntelligence()">AI Insights</button>
@@ -3560,7 +3560,7 @@ async function renderIntelligence() {
     }
   } catch(e) {
     const b = document.getElementById('intel-body');
-    if (b) b.innerHTML = `<div class="intel-section"><div class="empty-state"><div class="empty-title">Failed to load</div><div class="empty-sub">${esc(e.message)}</div></div></div>`;
+    if (b) b.innerHTML = `<div class="intel-section"><div class="empty-state" style="background:var(--surface-card);border:1px solid var(--border-subtle);border-radius:1rem;padding:2rem;text-align:center"><div class="empty-title" style="color:var(--text-primary)">Failed to load</div><div class="empty-sub" style="color:var(--text-muted)">${esc(e.message)}</div></div></div>`;
   }
 }
 
@@ -3571,7 +3571,7 @@ function _renderScoreboard(body) {
     .sort((a, b) => (b.performance_score || 0) - (a.performance_score || 0));
 
   if (!completed.length) {
-    body.innerHTML = `<div class="intel-section"><div class="empty-state"><div class="empty-title">No completed webinars yet</div><div class="empty-sub">Mark webinars as completed and upload data to see the scoreboard.</div></div></div>`;
+    body.innerHTML = `<div class="intel-section"><div class="empty-state" style="background:var(--surface-card);border:1px solid var(--border-subtle);border-radius:1rem;padding:2rem;text-align:center"><div class="empty-title" style="color:var(--text-primary)">No completed webinars yet</div><div class="empty-sub" style="color:var(--text-muted)">Mark webinars as completed and upload data to see the scoreboard.</div></div></div>`;
     return;
   }
 
@@ -3987,7 +3987,7 @@ async function _renderAIInsights(body, generate=false) {
     _intelInsightsCache = await api('/api/intelligence/insights');
     const insights = _intelInsightsCache.insights || [];
     if (!insights.length) {
-      body.innerHTML = `<div class="intel-section"><div class="empty-state"><div class="empty-title">Not enough data for insights yet</div><div class="empty-sub">Upload registration and attendance data for completed webinars first.</div></div></div>`;
+      body.innerHTML = `<div class="intel-section"><div class="empty-state" style="background:var(--surface-card);border:1px solid var(--border-subtle);border-radius:1rem;padding:2rem;text-align:center"><div class="empty-title" style="color:var(--text-primary)">Not enough data for insights yet</div><div class="empty-sub" style="color:var(--text-muted)">Upload registration and attendance data for completed webinars first.</div></div></div>`;
       return;
     }
 
@@ -4113,14 +4113,14 @@ async function _renderAIInsights(body, generate=false) {
 
       </div>`;
   } catch(e) {
-    body.innerHTML = `<div class="intel-section"><div class="empty-state"><div class="empty-title">Failed to generate insights</div><div class="empty-sub">${esc(e.message)}</div></div></div>`;
+    body.innerHTML = `<div class="intel-section"><div class="empty-state" style="background:var(--surface-card);border:1px solid var(--border-subtle);border-radius:1rem;padding:2rem;text-align:center"><div class="empty-title" style="color:var(--text-primary)">Failed to generate insights</div><div class="empty-sub" style="color:var(--text-muted)">${esc(e.message)}</div></div></div>`;
   }
 }
 
 function _renderTopicIntel(data) {
   const topics = data.topic_intelligence || [];
   if (!topics.length) {
-    return `<div class="intel-section"><div class="empty-state"><div class="empty-title">No topic data yet</div><div class="empty-sub">Complete webinars with ICP tags to see topic intelligence.</div></div></div>`;
+    return `<div class="intel-section"><div class="empty-state" style="background:var(--surface-card);border:1px solid var(--border-subtle);border-radius:1rem;padding:2rem;text-align:center"><div class="empty-title" style="color:var(--text-primary)">No topic data yet</div><div class="empty-sub" style="color:var(--text-muted)">Complete webinars with ICP tags to see topic intelligence.</div></div></div>`;
   }
 
   const proven  = topics.filter(t => t.attendance_rate >= 40 && t.webinar_count >= 3).sort((a,b) => b.attendance_rate - a.attendance_rate);
@@ -4268,7 +4268,7 @@ function _renderTopicIntel(data) {
 function _renderSpeakerIntel(data) {
   const speakers = data.speaker_performance || [];
   if (!speakers.length) {
-    return `<div class="intel-section"><div class="empty-state"><div class="empty-title">No speaker data yet</div><div class="empty-sub">Complete at least 2 webinars per speaker to see performance metrics.</div></div></div>`;
+    return `<div class="intel-section"><div class="empty-state" style="background:var(--surface-card);border:1px solid var(--border-subtle);border-radius:1rem;padding:2rem;text-align:center"><div class="empty-title" style="color:var(--text-primary)">No speaker data yet</div><div class="empty-sub" style="color:var(--text-muted)">Complete at least 2 webinars per speaker to see performance metrics.</div></div></div>`;
   }
 
   // Sort by total_regs desc
@@ -4567,7 +4567,7 @@ async function loadTopicPerformance() {
       <div style="margin-bottom:36px">
         <div class="page-hd" style="margin-bottom:16px">
           <div><h2 style="font-size:18px;font-weight:700;margin:0">ICP Performance</h2>
-          <p class="page-sub" style="margin:2px 0 0">How each topic category is performing across all webinars · <span style="color:#f59e0b;font-weight:600">40% attendance rate = industry benchmark</span></p></div>
+          <p class="page-sub" style="color:var(--text-secondary)" style="margin:2px 0 0">How each topic category is performing across all webinars · <span style="color:#f59e0b;font-weight:600">40% attendance rate = industry benchmark</span></p></div>
         </div>
         <div class="tp-grid">${rows || '<div style="color:var(--text-muted);font-size:13px;padding:16px">No topic performance data yet.</div>'}</div>
       </div>`;
@@ -4712,8 +4712,8 @@ async function renderPipeline() {
     <div class="pipeline-page">
       <div class="page-hd">
         <div>
-          <h1 class="page-title">Follow-up Pipeline</h1>
-          <p class="page-sub">Track high-intent attendees through to booked meetings and conversions.</p>
+          <h1 class="page-title" style="color:var(--text-primary)">Follow-up Pipeline</h1>
+          <p class="page-sub" style="color:var(--text-secondary)">Track high-intent attendees through to booked meetings and conversions.</p>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <div class="pipeline-view-toggle">
@@ -4724,11 +4724,11 @@ async function renderPipeline() {
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right:4px"><rect x="3" y="3" width="5" height="18" rx="1"/><rect x="10" y="3" width="5" height="18" rx="1"/><rect x="17" y="3" width="4" height="18" rx="1"/></svg>Board
             </button>
           </div>
-          <button class="btn btn-ghost btn-sm" onclick="window.open('/api/pipeline/export','_blank')">
+          <button class="btn btn-secondary btn-sm" style="background:rgba(255,255,255,0.70);border:1px solid var(--border-subtle);border-radius:0.875rem;font-weight:600" onclick="window.open('/api/pipeline/export','_blank')">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             Export CSV
           </button>
-          <button class="btn btn-ghost btn-sm" onclick="_pipelineCache=null;renderPipeline()">Refresh</button>
+          <button class="btn btn-secondary btn-sm" style="background:rgba(255,255,255,0.70);border:1px solid var(--border-subtle);border-radius:0.875rem;font-weight:600" onclick="_pipelineCache=null;renderPipeline()">Refresh</button>
           <button class="btn btn-primary btn-sm" onclick="openAddToPipelineModal()">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             Add Lead
@@ -4741,7 +4741,7 @@ async function renderPipeline() {
     if (!_pipelineCache) _pipelineCache = await api('/api/pipeline');
     _drawPipeline(_pipelineCache);
   } catch(e) {
-    document.getElementById('pipeline-body').innerHTML = `<div class="empty-state"><div class="empty-title">Failed to load pipeline</div><div class="empty-sub">${esc(e.message)}</div></div>`;
+    document.getElementById('pipeline-body').innerHTML = `<div class="empty-state" style="background:var(--surface-card);border:1px solid var(--border-subtle);border-radius:1rem;padding:2rem;text-align:center"><div class="empty-title" style="color:var(--text-primary)">Failed to load pipeline</div><div class="empty-sub" style="color:var(--text-muted)">${esc(e.message)}</div></div>`;
   }
 }
 
@@ -4763,16 +4763,16 @@ function _drawPipeline(contacts) {
         <div class="pipeline-kpi-lbl">Total</div>
       </div>
       ${Object.entries(PIPELINE_STATUS_META).map(([k,m]) => `
-        <div class="pipeline-kpi ${_pipelineFilter===k?'active':''}" onclick="_pipelineFilter='${k}';_drawPipeline(_pipelineCache)" style="cursor:pointer;--kpi-color:${m.color}">
-          <div class="pipeline-kpi-val" style="color:${m.color}">${counts[k]||0}</div>
-          <div class="pipeline-kpi-lbl">${m.label}</div>
+        <div class="pipeline-kpi ${_pipelineFilter===k?'active':''}" onclick="_pipelineFilter='${k}';_drawPipeline(_pipelineCache)" style="cursor:pointer;--kpi-color:${m.color};background:var(--surface-card);border:1px solid var(--border-subtle);border-radius:1rem;padding:0.75rem 1rem;box-shadow:0 2px 12px rgba(0,0,0,0.06)">
+          <div class="pipeline-kpi-val" style="color:${m.color};font-size:1.5rem;font-weight:800">${counts[k]||0}</div>
+          <div class="pipeline-kpi-lbl" style="color:var(--text-muted)">${m.label}</div>
         </div>`).join('')}
     </div>`;
 
   if (!filtered.length) {
     body.innerHTML = kpiHtml + `<div class="empty-state" style="margin-top:32px">
-      <div class="empty-title">${_pipelineFilter==='all'?'No leads in pipeline yet':'No leads in this stage'}</div>
-      <div class="empty-sub">${_pipelineFilter==='all'?'Add leads from the Leaderboard or click "Add Lead" above.':'Try selecting a different stage above.'}</div>
+      <div class="empty-title" style="color:var(--text-primary)">${_pipelineFilter==='all'?'No leads in pipeline yet':'No leads in this stage'}</div>
+      <div class="empty-sub" style="color:var(--text-muted)">${_pipelineFilter==='all'?'Add leads from the Leaderboard or click "Add Lead" above.':'Try selecting a different stage above.'}</div>
     </div>`;
     return;
   }
@@ -4800,10 +4800,10 @@ function _drawPipeline(contacts) {
           ${c.notes ? `<div style="font-size:11px;color:var(--rh-text-3,#6b7280);margin-top:6px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${esc(c.notes)}</div>` : ''}
         </div>`;
       }).join('') || `<div style="font-size:12px;color:var(--rh-text-4,#aaa);padding:8px 4px;text-align:center">Empty</div>`;
-      return `<div class="kanban-col">
+      return `<div class="kanban-col" style="background:var(--surface-card);border:1px solid var(--border-subtle);border-radius:1rem;padding:0.75rem;box-shadow:0 2px 12px rgba(0,0,0,0.06)">
         <div class="kanban-col-header">
           <span class="kanban-col-title" style="color:${m.color}">${m.label}</span>
-          <span class="kanban-col-count" style="color:${m.color}">${colCards.length}</span>
+          <span class="kanban-col-count" style="font-size:1.5rem;font-weight:800;color:${m.color}">${colCards.length}</span>
         </div>
         <div class="kanban-cards">${cardsHtml}</div>
       </div>`;
@@ -5471,8 +5471,8 @@ function renderUpload() {
     <div>
       <div class="page-hd">
         <div>
-          <h1 class="page-title">Export Analysis Reports</h1>
-          <p class="page-sub">Download detailed webinar analysis reports as PDF.</p>
+          <h1 class="page-title" style="color:var(--text-primary)">Export Analysis Reports</h1>
+          <p class="page-sub" style="color:var(--text-secondary)">Download detailed webinar analysis reports as PDF.</p>
         </div>
       </div>
 
@@ -5509,7 +5509,7 @@ function filterExportWebinars() {
   if (countEl) countEl.textContent = `${webinars.length} webinar${webinars.length !== 1 ? 's' : ''}`;
 
   if (!webinars.length) {
-    list.innerHTML = '<div class="empty-state"><div class="empty-title">No webinars in this range</div><div class="empty-sub">Try adjusting the date range above.</div></div>';
+    list.innerHTML = '<div class="empty-state" style="background:var(--surface-card);border:1px solid var(--border-subtle);border-radius:1rem;padding:2rem;text-align:center"><div class="empty-title" style="color:var(--text-primary)">No webinars in this range</div><div class="empty-sub" style="color:var(--text-muted)">Try adjusting the date range above.</div></div>';
     return;
   }
 
@@ -6373,8 +6373,8 @@ function renderMLAnalysis() {
   setContent(`
     <div class="page-hd" style="margin-bottom:20px;">
       <div>
-        <h1 class="page-title">AI Intelligence</h1>
-        <p class="page-sub">ML analysis of your programme · AI-drafted emails &amp; WhatsApp messages</p>
+        <h1 class="page-title" style="color:var(--text-primary)">AI Intelligence</h1>
+        <p class="page-sub" style="color:var(--text-secondary)">ML analysis of your programme · AI-drafted emails &amp; WhatsApp messages</p>
       </div>
     </div>
 
