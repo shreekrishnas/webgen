@@ -127,22 +127,10 @@ try:
     with engine.connect() as _conn:
         _conn.execute(_text_init(_lt_ddl))
         _conn.commit()
-    from seed_data import seed_database
-    seed_database()
-    logger.info("DB tables created and seed data applied")
+    logger.info("DB tables created")
 except Exception as e:
     logger.warning(f"DB init: {e}")
 
-try:
-    from sqlalchemy import func as _mf
-    _mdb = SessionLocal()
-    if not _mdb.query(models.Speaker).filter(_mf.lower(models.Speaker.name) == "shakthi prabhu").first():
-        _mdb.add(models.Speaker(name="Shakthi Prabhu", email="shakthi.prabhu@yourcompany.com", bio="Insurance and risk management specialist with expertise in term plans, health cover, and estate planning."))
-        _mdb.commit()
-        logger.info("Added speaker: Shakthi Prabhu")
-    _mdb.close()
-except Exception as e:
-    logger.warning(f"Speaker migration: {e}")
 
 
 @app.middleware("http")

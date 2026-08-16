@@ -66,8 +66,6 @@ else:
         from database import engine
         import models
         models.Base.metadata.create_all(bind=engine)
-        from seed_data import seed_database
-        seed_database()
     except Exception as e:
         import traceback
         print("Local init error:", traceback.format_exc(), file=sys.stderr)
