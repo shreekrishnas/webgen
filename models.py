@@ -6,9 +6,6 @@ from datetime import datetime
 
 class Speaker(Base):
     __tablename__ = "speakers"
-    __table_args__ = (
-        Index("ix_speakers_account_id", "account_id"),
-    )
 
     id = Column(Integer, primary_key=True, index=True)
     account_id = Column(String, nullable=False, index=True)
@@ -21,9 +18,6 @@ class Speaker(Base):
 
 class Webinar(Base):
     __tablename__ = "webinars"
-    __table_args__ = (
-        Index("ix_webinars_account_id", "account_id"),
-    )
 
     id = Column(Integer, primary_key=True, index=True)
     account_id = Column(String, nullable=False, index=True)
@@ -35,15 +29,14 @@ class Webinar(Base):
     status        = Column(String, default="completed")
     icp           = Column(String, default="Others")
     co_speaker_id = Column(Integer, ForeignKey("speakers.id"), nullable=True)
-    # New fields (audit additions)
-    platform          = Column(String, nullable=True)   # Zoom, Google Meet, etc.
-    category          = Column(String, nullable=True)   # Educational, Product Demo, etc.
-    language          = Column(String, nullable=True)   # English, Hindi, etc.
+    platform          = Column(String, nullable=True)
+    category          = Column(String, nullable=True)
+    language          = Column(String, nullable=True)
     recording_url     = Column(String, nullable=True)
-    tags              = Column(String, nullable=True)   # comma-separated
+    tags              = Column(String, nullable=True)
     expected_registrations = Column(Integer, nullable=True)
-    notes             = Column(Text, nullable=True)     # internal team notes
-    series            = Column(String, nullable=True)   # webinar series name
+    notes             = Column(Text, nullable=True)
+    series            = Column(String, nullable=True)
     is_favourite      = Column(Boolean, default=False, nullable=True)
 
     speaker    = relationship("Speaker", foreign_keys="[Webinar.speaker_id]", back_populates="webinars")
@@ -97,7 +90,7 @@ class UploadLog(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     webinar_id = Column(Integer, ForeignKey("webinars.id"))
-    file_type = Column(String, nullable=False)   # "registrations" or "attendees"
+    file_type = Column(String, nullable=False)
     filename = Column(String)
     original_count = Column(Integer, default=0)
     final_count = Column(Integer, default=0)
@@ -109,31 +102,23 @@ class UploadLog(Base):
 
 
 class WebinarNote(Base):
-    """Human knowledge/comments for a webinar — used by AI in analysis."""
     __tablename__ = "webinar_notes"
-    __table_args__ = (
-        Index("ix_webinar_notes_account_id", "account_id"),
-    )
 
     id = Column(Integer, primary_key=True, index=True)
     account_id = Column(String, nullable=False, index=True)
     webinar_id = Column(Integer, ForeignKey("webinars.id", ondelete="CASCADE"), index=True)
     author = Column(String, default="Team")
-    category = Column(String, default="observation")  # observation | speaker_feedback | tech_issue | content_quality | promotion
+    category = Column(String, default="observation")
     content = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class PipelineContact(Base):
-    """Sales pipeline: tracks hot leads from webinars through to meeting/conversion."""
     __tablename__ = "pipeline_contacts"
-    __table_args__ = (
-        Index("ix_pipeline_contacts_account_id", "account_id"),
-    )
 
     email = Column(String, primary_key=True, index=True)
     account_id = Column(String, nullable=False, index=True)
-    status = Column(String, default="new")   # new | contacted | meeting_booked | converted | not_interested
+    status = Column(String, default="new")
     assigned_to = Column(String)
     notes = Column(Text)
     follow_up_date = Column(Date, nullable=True)
@@ -143,30 +128,27 @@ class PipelineContact(Base):
 
 class WebinarAd(Base):
     __tablename__ = "webinar_ads"
-    __table_args__ = (
-        Index("ix_webinar_ads_account_id", "account_id"),
-    )
 
     id = Column(Integer, primary_key=True, index=True)
     account_id = Column(String, nullable=False, index=True)
     webinar_id = Column(Integer, ForeignKey("webinars.id", ondelete="CASCADE"))
     title = Column(String, nullable=False)
-    platform = Column(String)          # Facebook, Instagram, Google, LinkedIn, etc.
-    ad_type = Column(String)           # Image, Video, Carousel, Story, Reel, Banner
-    creative_image = Column(Text)      # base64 data URI (data:image/…;base64,…)
-    creative_url = Column(String)      # alternative: URL to hosted image
+    platform = Column(String)
+    ad_type = Column(String)
+    creative_image = Column(Text)
+    creative_url = Column(String)
     headline = Column(String)
     description = Column(Text)
-    cta_text = Column(String)          # e.g. "Register Now"
+    cta_text = Column(String)
     landing_url = Column(String)
-    budget = Column(String)            # stored as free-form string (e.g. "₹5,000")
+    budget = Column(String)
     spend = Column(String)
     impressions = Column(Integer)
     clicks = Column(Integer)
     conversions = Column(Integer)
     start_date = Column(Date)
     end_date = Column(Date)
-    status = Column(String, default="active")   # active | paused | completed
+    status = Column(String, default="active")
     notes = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow)
 
