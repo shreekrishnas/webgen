@@ -9,12 +9,16 @@
       init.cache = 'no-store';
       init.headers = Object.assign({}, init.headers, {
         'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Pragma': 'no-cache'
+        'Pragma': 'no-cache',
+        'X-Account-Id': window.ACCOUNT_ID || 'default'
       });
     }
     return _origFetch.call(this, input, init);
   };
 })();
+
+/* ── Multi-tenancy: read account_id from URL ──────────────────────────── */
+window.ACCOUNT_ID = new URLSearchParams(location.search).get('account_id') || 'default';
 
 /* ── State ──────────────────────────────────────────────────────────────── */
 const S = {
@@ -345,7 +349,8 @@ async function api(url, method='GET', body=null) {
     headers: {
       'Content-Type': 'application/json',
       'Cache-Control': 'no-cache, no-store, must-revalidate',
-      'Pragma': 'no-cache'
+      'Pragma': 'no-cache',
+      'X-Account-Id': window.ACCOUNT_ID
     },
     cache: 'no-store'
   };
@@ -6171,6 +6176,7 @@ function _applyThemeIcon() {
 function toggleDark() {
   S.dark = !S.dark;
   document.documentElement.classList.toggle('dark', S.dark);
+  document.documentElement.setAttribute('data-theme', S.dark ? 'dark' : 'light');
   localStorage.setItem('wiq-dark', S.dark);
   _applyThemeIcon();
 }
@@ -6182,8 +6188,10 @@ async function init() {
   if (saved === 'true') {
     S.dark = true;
     document.documentElement.classList.add('dark');
+    document.documentElement.setAttribute('data-theme', 'dark');
   } else {
     S.dark = false;
+    document.documentElement.setAttribute('data-theme', 'light');
   }
   _applyThemeIcon();
 
@@ -6916,7 +6924,7 @@ async function _mlRunModule(moduleId) {
   _mlResults[moduleId] = 'loading';
   _refreshCard(moduleId);
   try {
-    const res = await fetch('/api/ml-analysis', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(_aiPayload(moduleId)) });
+    const res = await fetch('/api/ml-analysis', { method:'POST', headers:{'Content-Type':'application/json','X-Account-Id':window.ACCOUNT_ID}, body:JSON.stringify(_aiPayload(moduleId)) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     _mlResults[moduleId] = await res.json();
     _generatedAt[moduleId] = new Date();
@@ -6939,7 +6947,7 @@ async function _commRunModule(moduleId) {
   _commResults[moduleId] = 'loading';
   _refreshCard(moduleId);
   try {
-    const res = await fetch('/api/ml-analysis', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(_aiPayload(moduleId)) });
+    const res = await fetch('/api/ml-analysis', { method:'POST', headers:{'Content-Type':'application/json','X-Account-Id':window.ACCOUNT_ID}, body:JSON.stringify(_aiPayload(moduleId)) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     _commResults[moduleId] = await res.json();
     _generatedAt[moduleId] = new Date();
