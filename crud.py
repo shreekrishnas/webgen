@@ -175,14 +175,16 @@ def _to_detail(db: Session, w: models.Webinar) -> schemas.WebinarDetail:
 
 # ── Webinar CRUD ──────────────────────────────────────────────────────────────
 
-def create_webinar(db: Session, webinar_in: schemas.WebinarCreate) -> models.Webinar:
+def create_webinar(db: Session, webinar_in: schemas.WebinarCreate, account_id: str = "") -> models.Webinar:
     speaker = db.query(models.Speaker).filter(
-        func.lower(models.Speaker.name) == webinar_in.speaker_name.strip().lower()
+        func.lower(models.Speaker.name) == webinar_in.speaker_name.strip().lower(),
+        models.Speaker.account_id == account_id,
     ).first()
     if not speaker:
         speaker = models.Speaker(
             name=webinar_in.speaker_name.strip(),
             email=webinar_in.speaker_email,
+            account_id=account_id,
         )
         db.add(speaker)
         db.flush()
@@ -203,6 +205,7 @@ def create_webinar(db: Session, webinar_in: schemas.WebinarCreate) -> models.Web
         expected_registrations=webinar_in.expected_registrations,
         notes=webinar_in.notes,
         series=getattr(webinar_in, 'series', None),
+        account_id=account_id,
     )
     db.add(webinar)
     db.commit()
@@ -210,26 +213,26 @@ def create_webinar(db: Session, webinar_in: schemas.WebinarCreate) -> models.Web
     return webinar
 
 
-def get_webinars_by_date(db: Session, date_str: str) -> List[schemas.WebinarSummary]:
+def get_webinars_by_date(db: Session, date_str: str, account_id: str = "") -> List[schemas.WebinarSummary]:
     try:
         d = date.fromisoformat(date_str)
     except ValueError:
         return []
-    webinars = db.query(models.Webinar).filter(models.Webinar.date == d).all()
+    webinars = db.query(models.Webinar).filter(models.Webinar.date == d, models.Webinar.account_id == account_id).all()
     return [_to_summary(db, w) for w in webinars]
 
 
-def get_webinars_by_name(db: Session, name: str) -> List[schemas.WebinarSummary]:
+def get_webinars_by_name(db: Session, name: str, account_id: str = "") -> List[schemas.WebinarSummary]:
     webinars = (
         db.query(models.Webinar)
-        .filter(models.Webinar.title.ilike(f"%{name}%"))
+        .filter(models.Webinar.title.ilike(f"%{name}%"), models.Webinar.account_id == account_id)
         .order_by(models.Webinar.date.desc())
         .all()
     )
     return [_to_summary(db, w) for w in webinars]
 
 
-def get_all_webinars(db: Session) -> List[schemas.WebinarSummary]:
+def get_all_webinars(db: Session, account_id: str = "") -> List[schemas.WebinarSummary]:
     """
     Single bulk query replaces 62 × 6 = 372 individual queries.
     All stats fetched in one round-trip via LEFT JOINs.
@@ -264,10 +267,10 @@ def get_all_webinars(db: Session) -> List[schemas.WebinarSummary]:
             WHERE attended = TRUE
             GROUP BY webinar_id
         ) a_stats ON a_stats.webinar_id = w.id
-
+        WHERE w.account_id = :account_id
         ORDER BY w.date DESC
     """)
-    rows = db.execute(sql).fetchall()
+    rows = db.execute(sql, {"account_id": account_id}).fetchall()
     result = []
     for row in rows:
         reg  = int(row.total_registrations or 0)
@@ -292,15 +295,15 @@ def get_all_webinars(db: Session) -> List[schemas.WebinarSummary]:
     return result
 
 
-def get_webinar_detail(db: Session, webinar_id: int) -> Optional[schemas.WebinarDetail]:
-    w = db.query(models.Webinar).filter(models.Webinar.id == webinar_id).first()
+def get_webinar_detail(db: Session, webinar_id: int, account_id: str = "") -> Optional[schemas.WebinarDetail]:
+    w = db.query(models.Webinar).filter(models.Webinar.id == webinar_id, models.Webinar.account_id == account_id).first()
     return _to_detail(db, w) if w else None
 
 
 # ── Speaker CRUD ──────────────────────────────────────────────────────────────
 
-def get_all_speakers(db: Session) -> List[schemas.Speaker]:
-    speakers = db.query(models.Speaker).order_by(models.Speaker.name).all()
+def get_all_speakers(db: Session, account_id: str = "") -> List[schemas.Speaker]:
+    speakers = db.query(models.Speaker).filter(models.Speaker.account_id == account_id).order_by(models.Speaker.name).all()
     result = []
     for sp in speakers:
         # Count webinars where speaker is primary OR co-speaker
@@ -314,14 +317,15 @@ def get_all_speakers(db: Session) -> List[schemas.Speaker]:
     return result
 
 
-def get_speaker_detail(db: Session, speaker_id: int) -> Optional[schemas.SpeakerDetail]:
-    sp = db.query(models.Speaker).filter(models.Speaker.id == speaker_id).first()
+def get_speaker_detail(db: Session, speaker_id: int, account_id: str = "") -> Optional[schemas.SpeakerDetail]:
+    sp = db.query(models.Speaker).filter(models.Speaker.id == speaker_id, models.Speaker.account_id == account_id).first()
     if not sp:
         return None
 
     webinars = (
         db.query(models.Webinar)
         .filter(
+            models.Webinar.account_id == account_id,
             (models.Webinar.speaker_id == speaker_id) |
             (models.Webinar.co_speaker_id == speaker_id)
         )
@@ -848,10 +852,11 @@ def get_leaderboard(
     speaker_id: Optional[int] = None,
     webinar_id: Optional[int] = None,
     limit: int = 50,
+    account_id: str = "",
 ) -> List[schemas.LeaderboardEntry]:
     from datetime import date as _date
-    extra_where = ""
-    params: dict = {"lim": limit}
+    extra_where = "AND w.account_id = :account_id"
+    params: dict = {"lim": limit, "account_id": account_id}
 
     if webinar_id:
         extra_where = "AND r.webinar_id = :webinar_id"
@@ -904,7 +909,8 @@ def get_leaderboard(
     if emails_lower:
         placeholders = {f"e{i}": e for i, e in enumerate(emails_lower)}
         ph_str = ",".join(f":e{i}" for i in range(len(emails_lower)))
-        for t in db.execute(text(f"SELECT email, tag FROM lead_tags WHERE email IN ({ph_str})"), placeholders).fetchall():
+        placeholders["_acct"] = account_id
+        for t in db.execute(text(f"SELECT email, tag FROM lead_tags WHERE account_id = :_acct AND email IN ({ph_str})"), placeholders).fetchall():
             tag_map[t.email.lower()] = t.tag
 
     today = _date.today()
@@ -978,7 +984,7 @@ def get_leaderboard(
 
 # ── Attendee profile ─────────────────────────────────────────────────────────
 
-def get_attendee_profile(db: Session, email: str) -> Optional[schemas.AttendeeProfile]:
+def get_attendee_profile(db: Session, email: str, account_id: str = "") -> Optional[schemas.AttendeeProfile]:
     """Return all webinars attended by a person identified by email."""
     email_norm = email.lower().strip()
     sql = text("""
@@ -999,10 +1005,11 @@ def get_attendee_profile(db: Session, email: str) -> Optional[schemas.AttendeePr
         LEFT JOIN speakers s ON s.id = w.speaker_id
         WHERE LOWER(TRIM(COALESCE(r.email, ''))) = :email
           AND a.attended = TRUE
+          AND w.account_id = :account_id
         GROUP BY r.email, w.id, w.title, w.date, w.time, w.icp, s.name, a.duration_minutes
         ORDER BY w.date DESC
     """)
-    rows = db.execute(sql, {"email": email_norm}).fetchall()
+    rows = db.execute(sql, {"email": email_norm, "account_id": account_id}).fetchall()
     if not rows:
         return None
 
@@ -1039,9 +1046,9 @@ def get_attendee_profile(db: Session, email: str) -> Optional[schemas.AttendeePr
 # ── Ad Creative CRUD ─────────────────────────────────────────────────────────
 
 def create_webinar_ad(
-    db: Session, webinar_id: int, ad_in: schemas.WebinarAdCreate
+    db: Session, webinar_id: int, ad_in: schemas.WebinarAdCreate, account_id: str = ""
 ) -> models.WebinarAd:
-    ad = models.WebinarAd(webinar_id=webinar_id, **ad_in.model_dump())
+    ad = models.WebinarAd(webinar_id=webinar_id, account_id=account_id, **ad_in.model_dump())
     db.add(ad)
     db.commit()
     db.refresh(ad)
@@ -1066,17 +1073,17 @@ def delete_webinar_ad(db: Session, ad_id: int, webinar_id: int) -> bool:
 
 # ── Platform stats ────────────────────────────────────────────────────────────
 
-def get_platform_stats(db: Session) -> schemas.PlatformStats:
-    """Single query for all platform-level counts."""
+def get_platform_stats(db: Session, account_id: str = "") -> schemas.PlatformStats:
+    """Single query for all platform-level counts, scoped by account_id."""
     sql = text("""
         SELECT
-            (SELECT COUNT(*) FROM webinars)                            AS total_webinars,
-            (SELECT COUNT(*) FROM speakers)                            AS total_speakers,
-            (SELECT COUNT(*) FROM registrations)                       AS total_reg,
-            (SELECT COUNT(*) FROM attendances WHERE attended = TRUE)   AS total_att,
-            (SELECT COUNT(*) FROM webinars WHERE status = 'upcoming')  AS upcoming
+            (SELECT COUNT(*) FROM webinars WHERE account_id = :aid)                            AS total_webinars,
+            (SELECT COUNT(*) FROM speakers WHERE account_id = :aid)                            AS total_speakers,
+            (SELECT COUNT(*) FROM registrations WHERE webinar_id IN (SELECT id FROM webinars WHERE account_id = :aid))  AS total_reg,
+            (SELECT COUNT(*) FROM attendances WHERE attended = TRUE AND webinar_id IN (SELECT id FROM webinars WHERE account_id = :aid))   AS total_att,
+            (SELECT COUNT(*) FROM webinars WHERE status = 'upcoming' AND account_id = :aid)  AS upcoming
     """)
-    row = db.execute(sql).fetchone()
+    row = db.execute(sql, {"aid": account_id}).fetchone()
     total_reg = int(row.total_reg or 0)
     total_att = int(row.total_att or 0)
     rate = round(total_att / total_reg * 100, 1) if total_reg else 0.0

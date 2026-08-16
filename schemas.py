@@ -115,6 +115,7 @@ class WebinarSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    account_id: str = ""
     title: str
     date: date
     time: Optional[str] = None
@@ -143,6 +144,7 @@ class WebinarDetail(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    account_id: str = ""
     title: str
     date: date
     time: Optional[str] = None
@@ -171,6 +173,7 @@ class Speaker(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    account_id: str = ""
     name: str
     email: Optional[str] = None
     bio: Optional[str] = None

@@ -6,8 +6,12 @@ from datetime import datetime
 
 class Speaker(Base):
     __tablename__ = "speakers"
+    __table_args__ = (
+        Index("ix_speakers_account_id", "account_id"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
+    account_id = Column(String, nullable=False, index=True)
     name = Column(String, nullable=False, index=True)
     email = Column(String)
     bio = Column(Text)
@@ -17,8 +21,12 @@ class Speaker(Base):
 
 class Webinar(Base):
     __tablename__ = "webinars"
+    __table_args__ = (
+        Index("ix_webinars_account_id", "account_id"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
+    account_id = Column(String, nullable=False, index=True)
     title = Column(String, nullable=False, index=True)
     date = Column(Date, nullable=False)
     time = Column(String)
@@ -103,8 +111,12 @@ class UploadLog(Base):
 class WebinarNote(Base):
     """Human knowledge/comments for a webinar — used by AI in analysis."""
     __tablename__ = "webinar_notes"
+    __table_args__ = (
+        Index("ix_webinar_notes_account_id", "account_id"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
+    account_id = Column(String, nullable=False, index=True)
     webinar_id = Column(Integer, ForeignKey("webinars.id", ondelete="CASCADE"), index=True)
     author = Column(String, default="Team")
     category = Column(String, default="observation")  # observation | speaker_feedback | tech_issue | content_quality | promotion
@@ -115,8 +127,12 @@ class WebinarNote(Base):
 class PipelineContact(Base):
     """Sales pipeline: tracks hot leads from webinars through to meeting/conversion."""
     __tablename__ = "pipeline_contacts"
+    __table_args__ = (
+        Index("ix_pipeline_contacts_account_id", "account_id"),
+    )
 
     email = Column(String, primary_key=True, index=True)
+    account_id = Column(String, nullable=False, index=True)
     status = Column(String, default="new")   # new | contacted | meeting_booked | converted | not_interested
     assigned_to = Column(String)
     notes = Column(Text)
@@ -127,8 +143,12 @@ class PipelineContact(Base):
 
 class WebinarAd(Base):
     __tablename__ = "webinar_ads"
+    __table_args__ = (
+        Index("ix_webinar_ads_account_id", "account_id"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
+    account_id = Column(String, nullable=False, index=True)
     webinar_id = Column(Integer, ForeignKey("webinars.id", ondelete="CASCADE"))
     title = Column(String, nullable=False)
     platform = Column(String)          # Facebook, Instagram, Google, LinkedIn, etc.

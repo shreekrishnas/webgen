@@ -37,6 +37,13 @@ def _auth(x_api_key: str = Header(default="")):
     if API_KEY and x_api_key != API_KEY:
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
+
+def get_account_id(x_account_id: str = Header(..., alias="X-Account-Id")):
+    """Extract and validate the X-Account-Id header for multi-tenancy."""
+    if not x_account_id:
+        raise HTTPException(status_code=400, detail="X-Account-Id header required")
+    return x_account_id
+
 def _ai_headers(api_key: str) -> dict:
     return {
         "Authorization": f"Bearer {api_key}",
@@ -113,16 +120,20 @@ try:
     _is_pg = "postgresql" in str(engine.url)
     _lt_ddl = """CREATE TABLE IF NOT EXISTS lead_tags (
             id SERIAL PRIMARY KEY,
-            email VARCHAR NOT NULL UNIQUE,
+            account_id VARCHAR NOT NULL DEFAULT '',
+            email VARCHAR NOT NULL,
             tag VARCHAR,
             note TEXT,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(account_id, email)
         )""" if _is_pg else """CREATE TABLE IF NOT EXISTS lead_tags (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            email VARCHAR NOT NULL UNIQUE,
+            account_id VARCHAR NOT NULL DEFAULT '',
+            email VARCHAR NOT NULL,
             tag VARCHAR,
             note TEXT,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(account_id, email)
         )"""
     with engine.connect() as _conn:
         _conn.execute(_text_init(_lt_ddl))
@@ -181,18 +192,20 @@ async def root():
 # ── Platform stats ────────────────────────────────────────────────────────────
 
 @app.get("/api/stats")
-def platform_stats(response: Response, db: Session = Depends(get_db)):
+def platform_stats(response: Response, db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):
     response.headers["Cache-Control"] = "no-store"
-    stats = crud.get_platform_stats(db)
+    stats = crud.get_platform_stats(db, account_id=account_id)
     # Add follow-up pending: attendees not yet in pipeline or still 'new'
     try:
         from sqlalchemy import text as _t
         fp = db.execute(_t("""
             SELECT COUNT(DISTINCT r.email) FROM attendances a
             JOIN registrations r ON r.id=a.registration_id
+            JOIN webinars w ON w.id=a.webinar_id
             WHERE a.attended=TRUE AND r.email IS NOT NULL
-            AND r.email NOT IN (SELECT email FROM pipeline_contacts WHERE status != 'new')
-        """)).fetchone()[0] or 0
+            AND w.account_id = :aid
+            AND r.email NOT IN (SELECT email FROM pipeline_contacts WHERE status != 'new' AND account_id = :aid)
+        """), {"aid": account_id}).fetchone()[0] or 0
         result = stats.dict() if hasattr(stats, 'dict') else dict(stats)
         result['followup_pending'] = int(fp)
         return result
@@ -215,14 +228,15 @@ def list_webinars(
     name: Optional[str] = Query(None),
     speaker_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
+    account_id: str = Depends(get_account_id),
 ):
     response.headers["Cache-Control"] = "no-store"
     if date:
-        webinars = crud.get_webinars_by_date(db, date)
+        webinars = crud.get_webinars_by_date(db, date, account_id=account_id)
     elif name:
-        webinars = crud.get_webinars_by_name(db, name)
+        webinars = crud.get_webinars_by_name(db, name, account_id=account_id)
     else:
-        webinars = crud.get_all_webinars(db)
+        webinars = crud.get_all_webinars(db, account_id=account_id)
         if speaker_id:
             webinars = [w for w in webinars if w.speaker_id == speaker_id]
     result = []
@@ -240,15 +254,15 @@ def list_webinars(
 
 
 @app.post("/api/webinars", response_model=schemas.WebinarSummary, status_code=201)
-def create_webinar(webinar: schemas.WebinarCreate, db: Session = Depends(get_db)):
-    w = crud.create_webinar(db, webinar)
+def create_webinar(webinar: schemas.WebinarCreate, db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):
+    w = crud.create_webinar(db, webinar, account_id=account_id)
     return crud._to_summary(db, w)
 
 
 @app.get("/api/webinars/{webinar_id}", response_model=schemas.WebinarDetail)
-def get_webinar(webinar_id: int, db: Session = Depends(get_db)):
+def get_webinar(webinar_id: int, db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):
     try:
-        detail = crud.get_webinar_detail(db, webinar_id)
+        detail = crud.get_webinar_detail(db, webinar_id, account_id=account_id)
         if not detail:
             raise HTTPException(status_code=404, detail="Webinar not found")
         return detail
@@ -260,10 +274,10 @@ def get_webinar(webinar_id: int, db: Session = Depends(get_db)):
 
 
 @app.patch("/api/webinars/{webinar_id}", response_model=schemas.WebinarSummary)
-def update_webinar(webinar_id: int, payload: dict, db: Session = Depends(get_db)):
+def update_webinar(webinar_id: int, payload: dict, db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):
     """Update title, speaker, time, description, or status of a webinar."""
     from sqlalchemy import func as _func
-    w = db.query(models.Webinar).filter(models.Webinar.id == webinar_id).first()
+    w = db.query(models.Webinar).filter(models.Webinar.id == webinar_id, models.Webinar.account_id == account_id).first()
     if not w:
         raise HTTPException(status_code=404, detail="Webinar not found")
     if "title" in payload:
@@ -291,10 +305,11 @@ def update_webinar(webinar_id: int, payload: dict, db: Session = Depends(get_db)
     if "speaker_name" in payload:
         sp_name = payload["speaker_name"].strip()
         speaker = db.query(models.Speaker).filter(
-            _func.lower(models.Speaker.name) == sp_name.lower()
+            _func.lower(models.Speaker.name) == sp_name.lower(),
+            models.Speaker.account_id == account_id,
         ).first()
         if not speaker:
-            speaker = models.Speaker(name=sp_name)
+            speaker = models.Speaker(name=sp_name, account_id=account_id)
             db.add(speaker)
             db.flush()
         w.speaker_id = speaker.id
@@ -304,8 +319,8 @@ def update_webinar(webinar_id: int, payload: dict, db: Session = Depends(get_db)
 
 
 @app.delete("/api/webinars/{webinar_id}", status_code=204)
-def delete_webinar(webinar_id: int, db: Session = Depends(get_db)):
-    w = db.query(models.Webinar).filter(models.Webinar.id == webinar_id).first()
+def delete_webinar(webinar_id: int, db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):
+    w = db.query(models.Webinar).filter(models.Webinar.id == webinar_id, models.Webinar.account_id == account_id).first()
     if not w:
         raise HTTPException(status_code=404, detail="Webinar not found")
     db.delete(w)
@@ -317,8 +332,9 @@ async def upload_registrations(
     webinar_id: int,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
+    account_id: str = Depends(get_account_id),
 ):
-    w = db.query(models.Webinar).filter(models.Webinar.id == webinar_id).first()
+    w = db.query(models.Webinar).filter(models.Webinar.id == webinar_id, models.Webinar.account_id == account_id).first()
     if not w:
         raise HTTPException(status_code=404, detail="Webinar not found")
     content = await file.read()
@@ -333,8 +349,9 @@ async def upload_attendees(
     webinar_id: int,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
+    account_id: str = Depends(get_account_id),
 ):
-    w = db.query(models.Webinar).filter(models.Webinar.id == webinar_id).first()
+    w = db.query(models.Webinar).filter(models.Webinar.id == webinar_id, models.Webinar.account_id == account_id).first()
     if not w:
         raise HTTPException(status_code=404, detail="Webinar not found")
     content = await file.read()
@@ -350,13 +367,13 @@ async def upload_attendees(
 # ── Webinar Notes (Human Knowledge) ──────────────────────────────────────────
 
 @app.get("/api/webinars/{webinar_id}/notes")
-def list_notes(webinar_id: int, db: Session = Depends(get_db)):
+def list_notes(webinar_id: int, db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):
     from sqlalchemy import text as _text
     rows = db.execute(_text("""
         SELECT id, author, category, content, created_at
-        FROM webinar_notes WHERE webinar_id = :w
+        FROM webinar_notes WHERE webinar_id = :w AND account_id = :aid
         ORDER BY created_at DESC
-    """), {"w": webinar_id}).fetchall()
+    """), {"w": webinar_id, "aid": account_id}).fetchall()
     return [{
         "id": r.id, "author": r.author, "category": r.category,
         "content": r.content, "created_at": str(r.created_at)
@@ -364,8 +381,8 @@ def list_notes(webinar_id: int, db: Session = Depends(get_db)):
 
 
 @app.post("/api/webinars/{webinar_id}/notes", status_code=201)
-def add_note(webinar_id: int, payload: dict, db: Session = Depends(get_db)):
-    w = db.query(models.Webinar).filter(models.Webinar.id == webinar_id).first()
+def add_note(webinar_id: int, payload: dict, db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):
+    w = db.query(models.Webinar).filter(models.Webinar.id == webinar_id, models.Webinar.account_id == account_id).first()
     if not w:
         raise HTTPException(status_code=404, detail="Webinar not found")
     content = (payload.get("content") or "").strip()
@@ -373,6 +390,7 @@ def add_note(webinar_id: int, payload: dict, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="content required")
     note = models.WebinarNote(
         webinar_id=webinar_id,
+        account_id=account_id,
         author=(payload.get("author") or "Team").strip()[:100],
         category=(payload.get("category") or "observation"),
         content=content,
@@ -387,26 +405,26 @@ def add_note(webinar_id: int, payload: dict, db: Session = Depends(get_db)):
 
 
 @app.delete("/api/webinars/{webinar_id}/notes/{note_id}", status_code=204)
-def delete_note(webinar_id: int, note_id: int, db: Session = Depends(get_db)):
+def delete_note(webinar_id: int, note_id: int, db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):
     from sqlalchemy import text as _text
-    db.execute(_text("DELETE FROM webinar_notes WHERE id = :nid AND webinar_id = :w"),
-               {"nid": note_id, "w": webinar_id})
+    db.execute(_text("DELETE FROM webinar_notes WHERE id = :nid AND webinar_id = :w AND account_id = :aid"),
+               {"nid": note_id, "w": webinar_id, "aid": account_id})
     db.commit()
 
 
 # ── Intelligence Dashboard (Phase 2) ─────────────────────────────────────────
 
 @app.get("/api/intelligence")
-def get_intelligence(db: Session = Depends(get_db)):
+def get_intelligence(db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):
     """Combined intelligence: topic performance, speaker deep-dive, campaign, ICP refinement."""
     try:
-        return _get_intelligence_inner(db)
+        return _get_intelligence_inner(db, account_id=account_id)
     except Exception:
         logger.exception("Unhandled error")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-def _get_intelligence_inner(db: Session):
+def _get_intelligence_inner(db: Session, account_id: str = ""):
     from sqlalchemy import text as _t
 
     # ── 1. Topic / ICP performance ──
@@ -419,9 +437,10 @@ def _get_intelligence_inner(db: Session):
         FROM webinars w
         LEFT JOIN (SELECT webinar_id, COUNT(*) AS cnt FROM registrations GROUP BY webinar_id) reg ON reg.webinar_id = w.id
         LEFT JOIN (SELECT webinar_id, COUNT(*) AS cnt FROM attendances WHERE attended=TRUE GROUP BY webinar_id) att ON att.webinar_id = w.id
+        WHERE w.account_id = :aid
         GROUP BY w.icp
         ORDER BY total_regs DESC
-    """)).fetchall()
+    """), {"aid": account_id}).fetchall()
 
     icp_rows = []
     for r in topic_perf:
@@ -448,11 +467,11 @@ def _get_intelligence_inner(db: Session):
         JOIN webinars w ON w.speaker_id = s.id OR w.co_speaker_id = s.id
         LEFT JOIN (SELECT webinar_id, COUNT(*) AS cnt FROM registrations GROUP BY webinar_id) reg ON reg.webinar_id = w.id
         LEFT JOIN (SELECT webinar_id, COUNT(*) AS cnt FROM attendances WHERE attended=TRUE GROUP BY webinar_id) att ON att.webinar_id = w.id
-        WHERE w.status = 'completed'
+        WHERE w.status = 'completed' AND w.account_id = :aid
         GROUP BY s.id, s.name
         HAVING COUNT(DISTINCT w.id) >= 2
         ORDER BY total_regs DESC
-    """)).fetchall()
+    """), {"aid": account_id}).fetchall()
 
     spk_rows = []
     for r in speaker_perf:
@@ -476,8 +495,8 @@ def _get_intelligence_inner(db: Session):
         FROM webinars w
         LEFT JOIN (SELECT webinar_id, COUNT(*) AS cnt FROM registrations GROUP BY webinar_id) reg ON reg.webinar_id = w.id
         LEFT JOIN (SELECT webinar_id, COUNT(*) AS cnt FROM attendances WHERE attended=TRUE GROUP BY webinar_id) att ON att.webinar_id = w.id
-        WHERE w.status = 'completed' AND w.date IS NOT NULL
-    """)).fetchall()
+        WHERE w.status = 'completed' AND w.date IS NOT NULL AND w.account_id = :aid
+    """), {"aid": account_id}).fetchall()
 
     day_buckets: dict = {}  # day_of_week -> {regs, att, count}
     from datetime import date as _date, datetime as _dt
@@ -509,9 +528,11 @@ def _get_intelligence_inner(db: Session):
     all_emails = db.execute(_t("""
         SELECT r.email, r.webinar_id
         FROM registrations r
+        JOIN webinars w ON w.id = r.webinar_id
         WHERE r.email IS NOT NULL AND r.email LIKE '%@%'
           AND r.email NOT LIKE '%@rhorizon.in'
-    """)).fetchall()
+          AND w.account_id = :aid
+    """), {"aid": account_id}).fetchall()
 
     domain_buckets: dict = {}
     for row in all_emails:
@@ -550,10 +571,12 @@ def _get_intelligence_inner(db: Session):
             COUNT(*) AS regs,
             COUNT(DISTINCT a.id) AS atts
         FROM registrations r
+        JOIN webinars w ON w.id = r.webinar_id
         LEFT JOIN attendances a ON a.registration_id = r.id AND a.attended = TRUE
+        WHERE w.account_id = :aid
         GROUP BY r.source
         ORDER BY regs DESC
-    """)).fetchall()
+    """), {"aid": account_id}).fetchall()
     sources = []
     for r in source_perf:
         rg = int(r.regs); at = int(r.atts)
@@ -575,10 +598,10 @@ def _get_intelligence_inner(db: Session):
 
 
 @app.get("/api/webinar-funnel/{webinar_id}")
-def get_webinar_funnel(webinar_id: int, db: Session = Depends(get_db)):
+def get_webinar_funnel(webinar_id: int, db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):
     """Return funnel data for a single webinar: regs -> attendees -> follow-up."""
     from sqlalchemy import text as _t
-    w = db.query(models.Webinar).filter(models.Webinar.id == webinar_id).first()
+    w = db.query(models.Webinar).filter(models.Webinar.id == webinar_id, models.Webinar.account_id == account_id).first()
     if not w:
         raise HTTPException(status_code=404, detail="Webinar not found")
 
@@ -639,7 +662,7 @@ def get_webinar_funnel(webinar_id: int, db: Session = Depends(get_db)):
 
 
 @app.get("/api/repeat-audience")
-def get_repeat_audience(db: Session = Depends(get_db)):
+def get_repeat_audience(db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):
     """Track first-time vs repeat registrants and attendees."""
     from sqlalchemy import text as _t
 
@@ -650,35 +673,42 @@ def get_repeat_audience(db: Session = Depends(get_db)):
                MAX(a.joined_at) AS last_seen
         FROM attendances a
         JOIN registrations r ON r.id = a.registration_id
+        JOIN webinars w ON w.id = a.webinar_id
         WHERE a.attended = TRUE AND r.email IS NOT NULL AND r.email NOT LIKE '%@rhorizon%'
+          AND w.account_id = :aid
         GROUP BY r.email, r.attendee_name
         HAVING COUNT(DISTINCT a.webinar_id) >= 2
         ORDER BY webinar_count DESC
         LIMIT 50
-    """)).fetchall()
+    """), {"aid": account_id}).fetchall()
 
     # Total unique registrants
     total_unique_regs = db.execute(_t("""
-        SELECT COUNT(DISTINCT email) FROM registrations WHERE email IS NOT NULL
-    """)).fetchone()[0] or 0
+        SELECT COUNT(DISTINCT r.email) FROM registrations r
+        JOIN webinars w ON w.id = r.webinar_id
+        WHERE r.email IS NOT NULL AND w.account_id = :aid
+    """), {"aid": account_id}).fetchone()[0] or 0
 
     # Total unique attendees
     total_unique_att = db.execute(_t("""
         SELECT COUNT(DISTINCT r.email) FROM attendances a
         JOIN registrations r ON r.id = a.registration_id
-        WHERE a.attended = TRUE AND r.email IS NOT NULL
-    """)).fetchone()[0] or 0
+        JOIN webinars w ON w.id = a.webinar_id
+        WHERE a.attended = TRUE AND r.email IS NOT NULL AND w.account_id = :aid
+    """), {"aid": account_id}).fetchone()[0] or 0
 
     # People who registered but never attended
     never_attended = db.execute(_t("""
         SELECT COUNT(DISTINCT r.email) FROM registrations r
-        WHERE r.email IS NOT NULL
+        JOIN webinars w ON w.id = r.webinar_id
+        WHERE r.email IS NOT NULL AND w.account_id = :aid
         AND r.email NOT IN (
             SELECT DISTINCT r2.email FROM attendances a
             JOIN registrations r2 ON r2.id = a.registration_id
-            WHERE a.attended = TRUE AND r2.email IS NOT NULL
+            JOIN webinars w2 ON w2.id = a.webinar_id
+            WHERE a.attended = TRUE AND r2.email IS NOT NULL AND w2.account_id = :aid
         )
-    """)).fetchone()[0] or 0
+    """), {"aid": account_id}).fetchone()[0] or 0
 
     repeat_list = [{
         "email": r.email,
@@ -699,7 +729,7 @@ def get_repeat_audience(db: Session = Depends(get_db)):
 
 
 @app.get("/api/topic-performance")
-def get_topic_performance(db: Session = Depends(get_db)):
+def get_topic_performance(db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):
     """Per-ICP topic performance with best speaker and sub-topic suggestions."""
     from sqlalchemy import text as _t
 
@@ -716,10 +746,10 @@ def get_topic_performance(db: Session = Depends(get_db)):
         LEFT JOIN (SELECT webinar_id, COUNT(*) AS cnt FROM registrations GROUP BY webinar_id) reg ON reg.webinar_id = w.id
         LEFT JOIN (SELECT webinar_id, COUNT(*) AS cnt FROM attendances WHERE attended=TRUE GROUP BY webinar_id) att ON att.webinar_id = w.id
         LEFT JOIN speakers s ON s.id = w.speaker_id
-        WHERE w.status = 'completed'
+        WHERE w.status = 'completed' AND w.account_id = :aid
         GROUP BY w.icp
         ORDER BY total_att DESC
-    """)).fetchall()
+    """), {"aid": account_id}).fetchall()
 
     # For each ICP, find the best speaker (highest att rate for that ICP)
     icp_data = []
@@ -737,11 +767,11 @@ def get_topic_performance(db: Session = Depends(get_db)):
             JOIN speakers s ON s.id = w.speaker_id
             LEFT JOIN (SELECT webinar_id, COUNT(*) AS cnt FROM registrations GROUP BY webinar_id) reg ON reg.webinar_id = w.id
             LEFT JOIN (SELECT webinar_id, COUNT(*) AS cnt FROM attendances WHERE attended=TRUE GROUP BY webinar_id) att ON att.webinar_id = w.id
-            WHERE w.status='completed' AND COALESCE(w.icp,'Others')=:icp AND reg.cnt > 0
+            WHERE w.status='completed' AND COALESCE(w.icp,'Others')=:icp AND reg.cnt > 0 AND w.account_id = :aid
             GROUP BY s.name
             ORDER BY (CAST(att.cnt AS FLOAT)/reg.cnt) DESC
             LIMIT 1
-        """), {"icp": r.icp or 'Others'}).fetchone()
+        """), {"icp": r.icp or 'Others', "aid": account_id}).fetchone()
 
         # Recent webinars for this ICP
         recent = db.execute(_t("""
@@ -749,9 +779,9 @@ def get_topic_performance(db: Session = Depends(get_db)):
                    (SELECT COUNT(*) FROM registrations WHERE webinar_id=w.id) as regs,
                    (SELECT COUNT(*) FROM attendances WHERE webinar_id=w.id AND attended=TRUE) as att
             FROM webinars w LEFT JOIN speakers s ON s.id=w.speaker_id
-            WHERE COALESCE(w.icp,'Others')=:icp AND w.status='completed'
+            WHERE COALESCE(w.icp,'Others')=:icp AND w.status='completed' AND w.account_id = :aid
             ORDER BY w.date DESC LIMIT 3
-        """), {"icp": r.icp or 'Others'}).fetchall()
+        """), {"icp": r.icp or 'Others', "aid": account_id}).fetchall()
 
         grade = 'A' if rate >= 40 else 'B' if rate >= 30 else 'C' if rate >= 20 else 'D'
 
@@ -775,7 +805,7 @@ def get_topic_performance(db: Session = Depends(get_db)):
 
 
 @app.get("/api/lead-quality")
-def get_lead_quality(db: Session = Depends(get_db)):
+def get_lead_quality(db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):
     """Score each attendee by ICP match, attendance count, repeat attendance, follow-up status."""
     from sqlalchemy import text as _t
 
@@ -789,10 +819,11 @@ def get_lead_quality(db: Session = Depends(get_db)):
         JOIN registrations r ON r.id = a.registration_id
         JOIN webinars w ON w.id = a.webinar_id
         WHERE a.attended = TRUE AND r.email IS NOT NULL AND r.email NOT LIKE '%@rhorizon%'
+          AND w.account_id = :aid
         GROUP BY r.email, r.attendee_name
         ORDER BY webinar_count DESC, avg_duration DESC
         LIMIT 100
-    """)).fetchall()
+    """), {"aid": account_id}).fetchall()
 
     # Get pipeline status for these emails
     emails = [r.email for r in rows]
@@ -800,7 +831,8 @@ def get_lead_quality(db: Session = Depends(get_db)):
     if emails:
         params = {f"e{i}": e for i, e in enumerate(emails[:100])}
         ph = ",".join(f":e{i}" for i in range(len(params)))
-        pl_rows = db.execute(_t(f"SELECT email, status FROM pipeline_contacts WHERE email IN ({ph})"), params).fetchall()
+        params["_aid"] = account_id
+        pl_rows = db.execute(_t(f"SELECT email, status FROM pipeline_contacts WHERE account_id = :_aid AND email IN ({ph})"), params).fetchall()
         pipeline_map = {r.email: r.status for r in pl_rows}
 
     premium_icps = {'Family Office', 'AIF', 'PMS', 'NRI', 'ESOPs'}
@@ -841,11 +873,11 @@ def get_lead_quality(db: Session = Depends(get_db)):
 
 
 @app.get("/api/speaker-insights")
-def get_speaker_insights(db: Session = Depends(get_db)):
+def get_speaker_insights(db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):
     """Per-speaker: best topics, best ICP, performance trend."""
     from sqlalchemy import text as _t
 
-    speakers = db.execute(_t("SELECT id, name, bio FROM speakers ORDER BY name")).fetchall()
+    speakers = db.execute(_t("SELECT id, name, bio FROM speakers WHERE account_id = :aid ORDER BY name"), {"aid": account_id}).fetchall()
     result = []
 
     for spk in speakers:
@@ -907,7 +939,7 @@ def get_speaker_insights(db: Session = Depends(get_db)):
 # ── Competitor Intelligence (Phase 3) ────────────────────────────────────────
 
 @app.get("/api/competitors")
-def list_competitors(db: Session = Depends(get_db)):
+def list_competitors(db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):
     from sqlalchemy import text as _t
     rows = db.execute(_t("""
         SELECT c.id, c.name, c.focus, c.website, c.color_hex,
@@ -928,6 +960,7 @@ def list_competitor_activity(
     competitor_id: Optional[int] = Query(None),
     days: int = Query(90, ge=1, le=365),
     db: Session = Depends(get_db),
+    account_id: str = Depends(get_account_id),
 ):
     from sqlalchemy import text as _t
     from datetime import date as _date, timedelta as _td
@@ -955,7 +988,7 @@ def list_competitor_activity(
 
 
 @app.post("/api/competitor-activity", status_code=201)
-def add_competitor_activity(payload: dict, db: Session = Depends(get_db)):
+def add_competitor_activity(payload: dict, db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):
     from sqlalchemy import text as _t
     required = ("competitor_id", "activity_date", "topic")
     for k in required:
@@ -987,7 +1020,7 @@ def add_competitor_activity(payload: dict, db: Session = Depends(get_db)):
 
 
 @app.post("/api/competitors", status_code=201)
-def add_competitor(payload: dict, db: Session = Depends(get_db)):
+def add_competitor(payload: dict, db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):
     from sqlalchemy import text as _t
     name = (payload.get("name") or "").strip()
     if not name:
@@ -1005,7 +1038,7 @@ def add_competitor(payload: dict, db: Session = Depends(get_db)):
 
 
 @app.post("/api/competitor-research")
-async def auto_research_competitor(payload: dict, db: Session = Depends(get_db)):
+async def auto_research_competitor(payload: dict, db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):
     """Use Perplexity web search to auto-research a competitor's recent webinar & content activity."""
     import os, json, httpx
     from datetime import date as _date, datetime as _dt
@@ -1133,7 +1166,7 @@ Return ONLY valid JSON array."""}]
 
 
 @app.get("/api/competitor-research/weekly")
-async def weekly_competitor_research(db: Session = Depends(get_db)):
+async def weekly_competitor_research(db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):
     """Vercel cron endpoint — runs every Monday to auto-research all competitors."""
     import os, json, httpx
     from datetime import date as _date, datetime as _dt
@@ -1237,7 +1270,7 @@ Use today {_date.today().isoformat()} if date unknown. Return [] if nothing conc
 
 
 @app.get("/api/intelligence/insights")
-async def get_intelligence_insights(db: Session = Depends(get_db)):
+async def get_intelligence_insights(db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):
     """AI-generated written insights from the intelligence data."""
     import os, httpx
     from sqlalchemy import text as _t
@@ -1251,24 +1284,24 @@ async def get_intelligence_insights(db: Session = Depends(get_db)):
         SELECT COALESCE(w.icp,'Others') AS icp, COUNT(*) AS webinars,
                SUM((SELECT COUNT(*) FROM registrations r WHERE r.webinar_id=w.id)) AS regs,
                SUM((SELECT COUNT(*) FROM attendances a WHERE a.webinar_id=w.id AND a.attended=TRUE)) AS att
-        FROM webinars w WHERE w.status='completed' GROUP BY w.icp ORDER BY regs DESC
-    """)).fetchall()
+        FROM webinars w WHERE w.status='completed' AND w.account_id = :aid GROUP BY w.icp ORDER BY regs DESC
+    """), {"aid": account_id}).fetchall()
 
     top_speakers = db.execute(_t("""
         SELECT s.name,
                COUNT(w.id) AS webinars,
                SUM((SELECT COUNT(*) FROM registrations r WHERE r.webinar_id=w.id)) AS regs,
                SUM((SELECT COUNT(*) FROM attendances a WHERE a.webinar_id=w.id AND a.attended=TRUE)) AS att
-        FROM speakers s JOIN webinars w ON w.speaker_id=s.id WHERE w.status='completed'
+        FROM speakers s JOIN webinars w ON w.speaker_id=s.id WHERE w.status='completed' AND w.account_id = :aid
         GROUP BY s.name ORDER BY att DESC
-    """)).fetchall()
+    """), {"aid": account_id}).fetchall()
 
     recent = db.execute(_t("""
         SELECT w.title, w.date,
                (SELECT COUNT(*) FROM registrations r WHERE r.webinar_id=w.id) AS regs,
                (SELECT COUNT(*) FROM attendances a WHERE a.webinar_id=w.id AND a.attended=TRUE) AS att
-        FROM webinars w WHERE w.status='completed' ORDER BY w.date DESC LIMIT 5
-    """)).fetchall()
+        FROM webinars w WHERE w.status='completed' AND w.account_id = :aid ORDER BY w.date DESC LIMIT 5
+    """), {"aid": account_id}).fetchall()
 
     icp_summary = "; ".join(
         f"{r.icp}: {r.webinars} webinars, {r.regs} regs, {r.att} att ({round(r.att/r.regs*100,1) if r.regs else 0}% rate)"
@@ -1290,9 +1323,9 @@ async def get_intelligence_insights(db: Session = Depends(get_db)):
                (SELECT COUNT(*) FROM registrations r WHERE r.webinar_id=w.id) AS regs,
                (SELECT COUNT(*) FROM attendances a WHERE a.webinar_id=w.id AND a.attended=TRUE) AS att
         FROM webinars w LEFT JOIN speakers s ON s.id=w.speaker_id
-        WHERE w.status='completed'
+        WHERE w.status='completed' AND w.account_id = :aid
         ORDER BY w.date DESC
-    """)).fetchall()
+    """), {"aid": account_id}).fetchall()
 
     webinar_lines = []
     for r in all_webinars:
@@ -1302,15 +1335,15 @@ async def get_intelligence_insights(db: Session = Depends(get_db)):
         webinar_lines.append(f"  [{r.date}] \"{r.title}\" | ICP:{r.icp or 'Others'} | Speaker:{r.speaker_name or 'Unknown'} | Regs:{regs} | Att:{att} | Rate:{rate}% | Score:{score}/100")
 
     # Check ads data
-    has_ads = db.execute(_t("SELECT COUNT(*) FROM webinar_ads")).fetchone()[0] > 0
+    has_ads = db.execute(_t("SELECT COUNT(*) FROM webinar_ads WHERE account_id = :aid"), {"aid": account_id}).fetchone()[0] > 0
     ads_summary = ""
     if has_ads:
         ads_rows = db.execute(_t("""
             SELECT platform, SUM(CAST(spend AS FLOAT)) as spend, SUM(impressions) as impr,
                    SUM(clicks) as clicks, SUM(conversions) as conv
-            FROM webinar_ads WHERE spend IS NOT NULL AND spend != ''
+            FROM webinar_ads WHERE spend IS NOT NULL AND spend != '' AND account_id = :aid
             GROUP BY platform ORDER BY spend DESC
-        """)).fetchall()
+        """), {"aid": account_id}).fetchall()
         if ads_rows:
             ads_summary = "ADS DATA:\n" + "\n".join(
                 f"  {r.platform}: spend={r.spend}, impressions={r.impr}, clicks={r.clicks}, conversions={r.conv}"
@@ -1371,7 +1404,7 @@ Return ONLY a valid JSON array of exactly 8 objects:
 
 
 @app.get("/api/intelligence/hot-leads")
-def get_hot_leads(db: Session = Depends(get_db)):
+def get_hot_leads(db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):
     """Attendees who stayed 30+ min but are NOT yet in pipeline (or still status='new').
     Also returns repeat attendees (attended 2+ webinars).
     These are the highest-intent leads to follow up with."""
@@ -1390,46 +1423,49 @@ def get_hot_leads(db: Session = Depends(get_db)):
         FROM attendances a
         JOIN registrations r ON r.id = a.registration_id
         JOIN webinars w ON w.id = a.webinar_id
-        LEFT JOIN pipeline_contacts p ON p.email = r.email
+        LEFT JOIN pipeline_contacts p ON p.email = r.email AND p.account_id = :aid
         WHERE a.attended = TRUE
           AND a.duration_minutes >= 30
           AND r.email IS NOT NULL
+          AND w.account_id = :aid
           AND (p.id IS NULL OR p.status = 'new')
         ORDER BY a.duration_minutes DESC, w.date DESC
         LIMIT 100
-    """)).fetchall()
+    """), {"aid": account_id}).fetchall()
 
     # Repeat attendees: attended 2+ different webinars
-    _is_pg = "postgresql" in str(engine.url)
-    _agg_fn = "STRING_AGG(DISTINCT COALESCE(w2.icp,'Others'), ',')" if _is_pg else "GROUP_CONCAT(DISTINCT COALESCE(w2.icp,'Others'))"
+    _is_pg_hl = "postgresql" in str(engine.url)
+    _agg_fn = "STRING_AGG(DISTINCT COALESCE(w2.icp,'Others'), ',')" if _is_pg_hl else "GROUP_CONCAT(DISTINCT COALESCE(w2.icp,'Others'))"
     repeat = db.execute(_t(f"""
         SELECT
             r.attendee_name AS name,
             r.email,
             COUNT(DISTINCT a.webinar_id) AS webinar_count,
             MAX(a.duration_minutes) AS max_duration,
-            (SELECT {_agg_fn} FROM attendances a2 JOIN registrations r2 ON r2.id=a2.registration_id JOIN webinars w2 ON w2.id=a2.webinar_id WHERE a2.attended=TRUE AND r2.email=r.email) AS icps,
+            (SELECT {_agg_fn} FROM attendances a2 JOIN registrations r2 ON r2.id=a2.registration_id JOIN webinars w2 ON w2.id=a2.webinar_id WHERE a2.attended=TRUE AND r2.email=r.email AND w2.account_id = :aid) AS icps,
             COALESCE(p.status, 'not_added') AS pipeline_status
         FROM attendances a
         JOIN registrations r ON r.id = a.registration_id
         JOIN webinars w ON w.id = a.webinar_id
-        LEFT JOIN pipeline_contacts p ON p.email = r.email
-        WHERE a.attended = TRUE AND r.email IS NOT NULL
+        LEFT JOIN pipeline_contacts p ON p.email = r.email AND p.account_id = :aid
+        WHERE a.attended = TRUE AND r.email IS NOT NULL AND w.account_id = :aid
         GROUP BY r.attendee_name, r.email, p.status
         HAVING COUNT(DISTINCT a.webinar_id) >= 2
         ORDER BY webinar_count DESC, max_duration DESC
         LIMIT 50
-    """)).fetchall()
+    """), {"aid": account_id}).fetchall()
 
     # Summary stats
     total_attendees = db.execute(_t(
         "SELECT COUNT(DISTINCT r.email) FROM attendances a "
-        "JOIN registrations r ON r.id=a.registration_id WHERE a.attended=TRUE AND r.email IS NOT NULL"
-    )).scalar() or 0
+        "JOIN registrations r ON r.id=a.registration_id "
+        "JOIN webinars w ON w.id=a.webinar_id "
+        "WHERE a.attended=TRUE AND r.email IS NOT NULL AND w.account_id = :aid"
+    ), {"aid": account_id}).scalar() or 0
 
     in_pipeline = db.execute(_t(
-        "SELECT COUNT(DISTINCT email) FROM pipeline_contacts WHERE status != 'new'"
-    )).scalar() or 0
+        "SELECT COUNT(DISTINCT email) FROM pipeline_contacts WHERE status != 'new' AND account_id = :aid"
+    ), {"aid": account_id}).scalar() or 0
 
     return {
         "hot_leads": [dict(r._mapping) for r in hot],
@@ -1440,7 +1476,7 @@ def get_hot_leads(db: Session = Depends(get_db)):
 
 
 @app.delete("/api/competitor-activity/{activity_id}", status_code=204)
-def delete_competitor_activity(activity_id: int, db: Session = Depends(get_db)):
+def delete_competitor_activity(activity_id: int, db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):
     from sqlalchemy import text as _t
     db.execute(_t("DELETE FROM competitor_activity WHERE id = :id"), {"id": activity_id})
     db.commit()
@@ -1455,7 +1491,7 @@ def _is_pg(db: Session) -> bool:
 
 
 @app.get("/api/competitor-gap-analysis")
-async def competitor_gap_analysis(db: Session = Depends(get_db)):
+async def competitor_gap_analysis(db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):
     """AI-powered gap analysis: where {COMPANY_NAME} can win vs competitor activity."""
     import os, httpx
     from sqlalchemy import text as _t
@@ -1477,9 +1513,9 @@ async def competitor_gap_analysis(db: Session = Depends(get_db)):
         rh_rows = db.execute(_t("""
             SELECT w.title, w.date, COALESCE(s.name, 'Unknown') AS speaker, COALESCE(w.icp, 'Others') AS icp
             FROM webinars w LEFT JOIN speakers s ON s.id = w.speaker_id
-            WHERE w.date >= :cutoff AND w.status = 'completed'
+            WHERE w.account_id = :aid AND w.date >= :cutoff AND w.status = 'completed'
             ORDER BY w.date DESC
-        """), {"cutoff": cutoff}).fetchall()
+        """), {"aid": account_id, "cutoff": cutoff}).fetchall()
 
         comp_block = "\n".join(
             f"  [{r.activity_date}] {r.competitor} | {r.format} | {r.topic}"
@@ -1582,14 +1618,14 @@ STRICT RULES (absolute, no exceptions):
 # ── Lead Tags (manual classification overrides) ──────────────────────────────
 
 @app.get("/api/lead-tags")
-def list_lead_tags(db: Session = Depends(get_db)):
+def list_lead_tags(db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):
     from sqlalchemy import text as _text
-    rows = db.execute(_text("SELECT email, tag, note, updated_at FROM lead_tags ORDER BY updated_at DESC")).fetchall()
+    rows = db.execute(_text("SELECT email, tag, note, updated_at FROM lead_tags WHERE account_id = :aid ORDER BY updated_at DESC"), {"aid": account_id}).fetchall()
     return [{"email": r.email, "tag": r.tag, "note": r.note, "updated_at": str(r.updated_at)} for r in rows]
 
 
 @app.put("/api/lead-tags/{email}")
-def upsert_lead_tag(email: str, payload: dict, db: Session = Depends(get_db)):
+def upsert_lead_tag(email: str, payload: dict, db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):
     from sqlalchemy import text as _text
     tag = (payload.get("tag") or "").strip().lower()
     note = (payload.get("note") or "").strip()
@@ -1597,16 +1633,16 @@ def upsert_lead_tag(email: str, payload: dict, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Invalid tag")
     email_l = email.lower().strip()
     if tag == "":
-        db.execute(_text("DELETE FROM lead_tags WHERE email = :e"), {"e": email_l})
+        db.execute(_text("DELETE FROM lead_tags WHERE email = :e AND account_id = :aid"), {"e": email_l, "aid": account_id})
     else:
         # Upsert (works on both SQLite and Postgres)
-        existing = db.execute(_text("SELECT id FROM lead_tags WHERE email = :e"), {"e": email_l}).fetchone()
+        existing = db.execute(_text("SELECT id FROM lead_tags WHERE email = :e AND account_id = :aid"), {"e": email_l, "aid": account_id}).fetchone()
         if existing:
-            db.execute(_text("UPDATE lead_tags SET tag=:t, note=:n, updated_at=CURRENT_TIMESTAMP WHERE email=:e"),
-                       {"t": tag, "n": note, "e": email_l})
+            db.execute(_text("UPDATE lead_tags SET tag=:t, note=:n, updated_at=CURRENT_TIMESTAMP WHERE email=:e AND account_id = :aid"),
+                       {"t": tag, "n": note, "e": email_l, "aid": account_id})
         else:
-            db.execute(_text("INSERT INTO lead_tags (email, tag, note) VALUES (:e, :t, :n)"),
-                       {"e": email_l, "t": tag, "n": note})
+            db.execute(_text("INSERT INTO lead_tags (email, tag, note, account_id) VALUES (:e, :t, :n, :aid)"),
+                       {"e": email_l, "t": tag, "n": note, "aid": account_id})
     db.commit()
     return {"email": email_l, "tag": tag or None, "note": note or None}
 
@@ -1621,13 +1657,14 @@ def export_leaderboard(
     max_score: Optional[int] = Query(None),
     limit: int = Query(1000, ge=1, le=10000),
     db: Session = Depends(get_db),
+    account_id: str = Depends(get_account_id),
 ):
     """Export leaderboard data reflecting current filters (limit, speaker, webinar, score range)."""
     from sqlalchemy import text as _text
 
     # Get the same data the /api/leaderboard endpoint returns
-    where = ["a.attended = TRUE"]
-    params: dict = {}
+    where = ["a.attended = TRUE", "w.account_id = :aid"]
+    params: dict = {"aid": account_id}
     if speaker_id:
         where.append("w.speaker_id = :spk")
         params["spk"] = speaker_id
@@ -1704,7 +1741,8 @@ def export_leaderboard(
     if emails_lower:
         placeholders = {f"e{i}": e for i, e in enumerate(emails_lower)}
         ph_str = ",".join(f":e{i}" for i in range(len(emails_lower)))
-        for t in db.execute(_text(f"SELECT email, tag FROM lead_tags WHERE email IN ({ph_str})"), placeholders).fetchall():
+        placeholders["_aid"] = account_id
+        for t in db.execute(_text(f"SELECT email, tag FROM lead_tags WHERE account_id = :_aid AND email IN ({ph_str})"), placeholders).fetchall():
             tag_map[t.email.lower()] = t.tag
 
     from datetime import date as _date
@@ -1812,7 +1850,7 @@ def _extract_json(text: str):
 # ── AI Chatbot ───────────────────────────────────────────────────────────────
 
 @app.post("/api/chat")
-async def chat(payload: dict, db: Session = Depends(get_db)):
+async def chat(payload: dict, db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):
     """Answer questions about webinar data using AI + live DB context."""
     import os, json, httpx
     from sqlalchemy import text
@@ -1832,8 +1870,8 @@ async def chat(payload: dict, db: Session = Depends(get_db)):
           COUNT(*) as total_webinars,
           SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) as completed,
           SUM(CASE WHEN status='incomplete' THEN 1 ELSE 0 END) as incomplete
-        FROM webinars
-    """)).fetchone()
+        FROM webinars WHERE account_id = :aid
+    """), {"aid": account_id}).fetchone()
 
     speaker_stats = db.execute(text("""
         SELECT s.name,
@@ -1841,13 +1879,14 @@ async def chat(payload: dict, db: Session = Depends(get_db)):
           SUM((SELECT COUNT(*) FROM registrations r WHERE r.webinar_id=w.id)) as total_regs,
           SUM((SELECT COUNT(*) FROM attendances a WHERE a.webinar_id=w.id AND a.attended=TRUE)) as total_att
         FROM speakers s JOIN webinars w ON w.speaker_id=s.id
+        WHERE w.account_id = :aid
         GROUP BY s.name ORDER BY webinars DESC
-    """)).fetchall()
+    """), {"aid": account_id}).fetchall()
 
     icp_stats = db.execute(text("""
         SELECT COALESCE(icp,'Others') as icp, COUNT(*) as cnt
-        FROM webinars GROUP BY icp ORDER BY cnt DESC
-    """)).fetchall()
+        FROM webinars WHERE account_id = :aid GROUP BY icp ORDER BY cnt DESC
+    """), {"aid": account_id}).fetchall()
 
     top_webinars = db.execute(text("""
         SELECT w.title, w.date, s.name as speaker,
@@ -1855,14 +1894,16 @@ async def chat(payload: dict, db: Session = Depends(get_db)):
           (SELECT COUNT(*) FROM registrations r WHERE r.webinar_id=w.id) as regs,
           (SELECT COUNT(*) FROM attendances a WHERE a.webinar_id=w.id AND a.attended=TRUE) as att
         FROM webinars w LEFT JOIN speakers s ON s.id=w.speaker_id
+        WHERE w.account_id = :aid
         ORDER BY regs DESC LIMIT 10
-    """)).fetchall()
+    """), {"aid": account_id}).fetchall()
 
     recent = db.execute(text("""
         SELECT w.title, w.date, s.name as speaker, COALESCE(w.icp,'Others') as icp, w.status
         FROM webinars w LEFT JOIN speakers s ON s.id=w.speaker_id
+        WHERE w.account_id = :aid
         ORDER BY w.date DESC LIMIT 8
-    """)).fetchall()
+    """), {"aid": account_id}).fetchall()
 
     # Build context string
     ctx_parts = [
@@ -2058,7 +2099,7 @@ Remember: nothing outside this data exists for you. You are a closed-book analys
 # ── Weekly Topic Suggestions ─────────────────────────────────────────────────
 
 @app.get("/api/topics")
-async def get_topic_suggestions():
+async def get_topic_suggestions(account_id: str = Depends(get_account_id)):
     """Generate fresh weekly topic suggestions per speaker using live market news + AI."""
     import os, json, httpx
     from datetime import date
@@ -2220,12 +2261,12 @@ HARD RULES:
 # ── AI Webinar Analysis ───────────────────────────────────────────────────────
 
 @app.post("/api/webinars/{webinar_id}/analyze")
-async def analyze_webinar(webinar_id: int, db: Session = Depends(get_db)):  # noqa: C901
+async def analyze_webinar(webinar_id: int, db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):  # noqa: C901
     """Run AI-powered analysis on a webinar using Claude."""
     import os, json
     from sqlalchemy import text
     try:
-        return await _do_analyze(webinar_id, db)
+        return await _do_analyze(webinar_id, db, account_id=account_id)
     except HTTPException:
         raise
     except Exception as exc:
@@ -2233,11 +2274,11 @@ async def analyze_webinar(webinar_id: int, db: Session = Depends(get_db)):  # no
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-async def _do_analyze(webinar_id: int, db):
+async def _do_analyze(webinar_id: int, db, account_id: str = ""):
     import os, json
     from sqlalchemy import text
 
-    w = db.query(models.Webinar).filter(models.Webinar.id == webinar_id).first()
+    w = db.query(models.Webinar).filter(models.Webinar.id == webinar_id, models.Webinar.account_id == account_id).first()
     if not w:
         raise HTTPException(status_code=404, detail="Webinar not found")
 
@@ -2453,12 +2494,12 @@ Return ONLY the JSON object, nothing before or after, no markdown fences."""
 # ── Webinar vs Previous Comparison ────────────────────────────────────────────
 
 @app.post("/api/webinars/{webinar_id}/compare")
-async def compare_webinar(webinar_id: int, db: Session = Depends(get_db)):
+async def compare_webinar(webinar_id: int, db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):
     """Compare this webinar to the most recent previous webinar by same speaker (fallback: same ICP, then platform avg)."""
     import os, json
     from sqlalchemy import text as _text
     try:
-        w = db.query(models.Webinar).filter(models.Webinar.id == webinar_id).first()
+        w = db.query(models.Webinar).filter(models.Webinar.id == webinar_id, models.Webinar.account_id == account_id).first()
         if not w:
             raise HTTPException(status_code=404, detail="Webinar not found")
 
@@ -2488,25 +2529,25 @@ async def compare_webinar(webinar_id: int, db: Session = Depends(get_db)):
         prev = db.execute(_text("""
             SELECT id, title, date, speaker_id, icp
             FROM webinars
-            WHERE date < :d AND status='completed' AND speaker_id = :spk
+            WHERE account_id = :aid AND date < :d AND status='completed' AND speaker_id = :spk
             ORDER BY date DESC LIMIT 1
-        """), {"d": w.date, "spk": w.speaker_id}).fetchone()
+        """), {"aid": account_id, "d": w.date, "spk": w.speaker_id}).fetchone()
 
         comparison_basis = "same speaker"
         if not prev:
             prev = db.execute(_text("""
                 SELECT id, title, date, speaker_id, icp
                 FROM webinars
-                WHERE date < :d AND status='completed' AND COALESCE(icp,'Others') = :icp
+                WHERE account_id = :aid AND date < :d AND status='completed' AND COALESCE(icp,'Others') = :icp
                 ORDER BY date DESC LIMIT 1
-            """), {"d": w.date, "icp": w.icp or "Others"}).fetchone()
+            """), {"aid": account_id, "d": w.date, "icp": w.icp or "Others"}).fetchone()
             comparison_basis = "same ICP"
         if not prev:
             prev = db.execute(_text("""
                 SELECT id, title, date, speaker_id, icp FROM webinars
-                WHERE date < :d AND status='completed'
+                WHERE account_id = :aid AND date < :d AND status='completed'
                 ORDER BY date DESC LIMIT 1
-            """), {"d": w.date}).fetchone()
+            """), {"aid": account_id, "d": w.date}).fetchone()
             comparison_basis = "most recent prior webinar"
         if not prev:
             raise HTTPException(status_code=404, detail="No previous webinar available to compare.")
@@ -2596,8 +2637,8 @@ Return ONLY the JSON, no markdown, no preamble."""
 # ── Registrations download ───────────────────────────────────────────────────
 
 @app.get("/api/webinars/{webinar_id}/registrations/download")
-def download_registrations(webinar_id: int, db: Session = Depends(get_db)):
-    w = db.query(models.Webinar).filter(models.Webinar.id == webinar_id).first()
+def download_registrations(webinar_id: int, db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):
+    w = db.query(models.Webinar).filter(models.Webinar.id == webinar_id, models.Webinar.account_id == account_id).first()
     if not w:
         raise HTTPException(status_code=404, detail="Webinar not found")
 
@@ -2641,14 +2682,15 @@ def download_registrations(webinar_id: int, db: Session = Depends(get_db)):
 def download_all_attendees(
     speaker_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
+    account_id: str = Depends(get_account_id),
 ):
     """Download all attendees across every webinar as a single CSV."""
     from sqlalchemy import text as _text
 
-    extra_where = ""
-    params: dict = {}
+    extra_where = "AND w.account_id = :aid"
+    params: dict = {"aid": account_id}
     if speaker_id:
-        extra_where = "AND w.speaker_id = :speaker_id"
+        extra_where += " AND w.speaker_id = :speaker_id"
         params["speaker_id"] = speaker_id
 
     sql = _text(f"""
@@ -2699,8 +2741,8 @@ def download_all_attendees(
 # ── Attendees download ───────────────────────────────────────────────────────
 
 @app.get("/api/webinars/{webinar_id}/attendees/download")
-def download_attendees(webinar_id: int, db: Session = Depends(get_db)):
-    w = db.query(models.Webinar).filter(models.Webinar.id == webinar_id).first()
+def download_attendees(webinar_id: int, db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):
+    w = db.query(models.Webinar).filter(models.Webinar.id == webinar_id, models.Webinar.account_id == account_id).first()
     if not w:
         raise HTTPException(status_code=404, detail="Webinar not found")
 
@@ -2745,8 +2787,8 @@ def download_attendees(webinar_id: int, db: Session = Depends(get_db)):
 # ── Ad Creatives ──────────────────────────────────────────────────────────────
 
 @app.get("/api/webinars/{webinar_id}/ads", response_model=List[schemas.WebinarAdOut])
-def list_webinar_ads(webinar_id: int, db: Session = Depends(get_db)):
-    w = db.query(models.Webinar).filter(models.Webinar.id == webinar_id).first()
+def list_webinar_ads(webinar_id: int, db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):
+    w = db.query(models.Webinar).filter(models.Webinar.id == webinar_id, models.Webinar.account_id == account_id).first()
     if not w:
         raise HTTPException(status_code=404, detail="Webinar not found")
     return crud.get_webinar_ads(db, webinar_id)
@@ -2757,16 +2799,17 @@ def create_webinar_ad(
     webinar_id: int,
     ad: schemas.WebinarAdCreate,
     db: Session = Depends(get_db),
+    account_id: str = Depends(get_account_id),
 ):
-    w = db.query(models.Webinar).filter(models.Webinar.id == webinar_id).first()
+    w = db.query(models.Webinar).filter(models.Webinar.id == webinar_id, models.Webinar.account_id == account_id).first()
     if not w:
         raise HTTPException(status_code=404, detail="Webinar not found")
-    created = crud.create_webinar_ad(db, webinar_id, ad)
+    created = crud.create_webinar_ad(db, webinar_id, ad, account_id=account_id)
     return schemas.WebinarAdOut.model_validate(created)
 
 
 @app.delete("/api/webinars/{webinar_id}/ads/{ad_id}", status_code=204)
-def delete_webinar_ad(webinar_id: int, ad_id: int, db: Session = Depends(get_db)):
+def delete_webinar_ad(webinar_id: int, ad_id: int, db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):
     deleted = crud.delete_webinar_ad(db, ad_id, webinar_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Ad not found")
@@ -2775,15 +2818,15 @@ def delete_webinar_ad(webinar_id: int, ad_id: int, db: Session = Depends(get_db)
 # ── Speakers ──────────────────────────────────────────────────────────────────
 
 @app.get("/api/speakers", response_model=List[schemas.Speaker])
-def list_speakers(response: Response, db: Session = Depends(get_db)):
+def list_speakers(response: Response, db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):
     response.headers["Cache-Control"] = "no-store"
-    return crud.get_all_speakers(db)
+    return crud.get_all_speakers(db, account_id=account_id)
 
 
 @app.get("/api/speakers/{speaker_id}", response_model=schemas.SpeakerDetail)
-def get_speaker(speaker_id: int, db: Session = Depends(get_db)):
+def get_speaker(speaker_id: int, db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):
     try:
-        detail = crud.get_speaker_detail(db, speaker_id)
+        detail = crud.get_speaker_detail(db, speaker_id, account_id=account_id)
         if not detail:
             raise HTTPException(status_code=404, detail="Speaker not found")
         return detail
@@ -2797,8 +2840,8 @@ def get_speaker(speaker_id: int, db: Session = Depends(get_db)):
 # ── Attendee profile ──────────────────────────────────────────────────────────
 
 @app.get("/api/attendee", response_model=schemas.AttendeeProfile)
-def get_attendee(email: str = Query(...), db: Session = Depends(get_db)):
-    profile = crud.get_attendee_profile(db, email)
+def get_attendee(email: str = Query(...), db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):
+    profile = crud.get_attendee_profile(db, email, account_id=account_id)
     if not profile:
         raise HTTPException(status_code=404, detail="Attendee not found")
     return profile
@@ -2813,9 +2856,10 @@ def get_leaderboard(
     webinar_id: Optional[int] = Query(None),
     limit: int = Query(50, ge=1, le=1000),
     db: Session = Depends(get_db),
+    account_id: str = Depends(get_account_id),
 ):
     response.headers["Cache-Control"] = "no-store"
-    return crud.get_leaderboard(db, speaker_id=speaker_id, webinar_id=webinar_id, limit=limit)
+    return crud.get_leaderboard(db, speaker_id=speaker_id, webinar_id=webinar_id, limit=limit, account_id=account_id)
 
 
 # ── Meeting Pipeline ─────────────────────────────────────────────────────────
@@ -2824,12 +2868,12 @@ PIPELINE_STATUSES = {"new", "contacted", "meeting_booked", "converted", "not_int
 
 
 @app.get("/api/pipeline")
-def list_pipeline(db: Session = Depends(get_db)):
+def list_pipeline(db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):
     """Return all pipeline contacts enriched with leaderboard data."""
     from sqlalchemy import text as _text
     contacts = db.execute(_text(
-        "SELECT email, status, assigned_to, notes, follow_up_date, added_at, updated_at FROM pipeline_contacts ORDER BY updated_at DESC"
-    )).fetchall()
+        "SELECT email, status, assigned_to, notes, follow_up_date, added_at, updated_at FROM pipeline_contacts WHERE account_id = :aid ORDER BY updated_at DESC"
+    ), {"aid": account_id}).fetchall()
 
     # Build leaderboard lookup: email → {name, total_webinars, total_duration, readiness, last_webinar}
     lb_rows = db.execute(_text("""
@@ -2842,8 +2886,9 @@ def list_pipeline(db: Session = Depends(get_db)):
         FROM registrations r
         JOIN attendances a ON a.registration_id = r.id AND a.attended = TRUE
         JOIN webinars w ON w.id = a.webinar_id
+        WHERE w.account_id = :aid
         GROUP BY r.email, r.attendee_name
-    """)).fetchall()
+    """), {"aid": account_id}).fetchall()
     lb_map = {}
     for row in lb_rows:
         # Keep highest total_duration per email (in case of duplicates)
@@ -2857,7 +2902,7 @@ def list_pipeline(db: Session = Depends(get_db)):
 
     # Lead tags lookup (table may not exist in all environments)
     try:
-        tags = db.execute(_text("SELECT email, tag FROM lead_tags")).fetchall()
+        tags = db.execute(_text("SELECT email, tag FROM lead_tags WHERE account_id = :aid"), {"aid": account_id}).fetchall()
         tag_map = {t.email: t.tag for t in tags}
     except Exception:
         tag_map = {}
@@ -2883,7 +2928,7 @@ def list_pipeline(db: Session = Depends(get_db)):
 
 
 @app.put("/api/pipeline/{email}", status_code=200)
-def upsert_pipeline(email: str, payload: dict, db: Session = Depends(get_db)):
+def upsert_pipeline(email: str, payload: dict, db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):
     """Add or update a contact in the pipeline."""
     from sqlalchemy import text as _text
     from datetime import datetime as _dt
@@ -2898,36 +2943,36 @@ def upsert_pipeline(email: str, payload: dict, db: Session = Depends(get_db)):
     now = _dt.utcnow().isoformat(sep=" ", timespec="seconds")
 
     # Check if exists (SQLite vs PostgreSQL upsert compatible pattern)
-    existing = db.execute(_text("SELECT email FROM pipeline_contacts WHERE email = :e"), {"e": email}).fetchone()
+    existing = db.execute(_text("SELECT email FROM pipeline_contacts WHERE email = :e AND account_id = :aid"), {"e": email, "aid": account_id}).fetchone()
     if existing:
         db.execute(_text("""
             UPDATE pipeline_contacts
             SET status=:s, assigned_to=:a, notes=:n, follow_up_date=:f, updated_at=:u
-            WHERE email=:e
-        """), {"s": status, "a": assigned_to, "n": notes, "f": follow_up_raw, "u": now, "e": email})
+            WHERE email=:e AND account_id=:aid
+        """), {"s": status, "a": assigned_to, "n": notes, "f": follow_up_raw, "u": now, "e": email, "aid": account_id})
     else:
         db.execute(_text("""
-            INSERT INTO pipeline_contacts (email, status, assigned_to, notes, follow_up_date, added_at, updated_at)
-            VALUES (:e, :s, :a, :n, :f, :u, :u)
-        """), {"e": email, "s": status, "a": assigned_to, "n": notes, "f": follow_up_raw, "u": now})
+            INSERT INTO pipeline_contacts (email, status, assigned_to, notes, follow_up_date, added_at, updated_at, account_id)
+            VALUES (:e, :s, :a, :n, :f, :u, :u, :aid)
+        """), {"e": email, "s": status, "a": assigned_to, "n": notes, "f": follow_up_raw, "u": now, "aid": account_id})
     db.commit()
     return {"email": email, "status": status}
 
 
 @app.delete("/api/pipeline/{email}", status_code=204)
-def remove_pipeline(email: str, db: Session = Depends(get_db)):
+def remove_pipeline(email: str, db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):
     from sqlalchemy import text as _text
-    db.execute(_text("DELETE FROM pipeline_contacts WHERE email = :e"), {"e": email})
+    db.execute(_text("DELETE FROM pipeline_contacts WHERE email = :e AND account_id = :aid"), {"e": email, "aid": account_id})
     db.commit()
 
 
 @app.get("/api/pipeline/export")
-def export_pipeline(db: Session = Depends(get_db)):
+def export_pipeline(db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):
     """Download full pipeline as CSV."""
     from sqlalchemy import text as _text
     contacts = db.execute(_text(
-        "SELECT email, status, assigned_to, notes, follow_up_date, added_at FROM pipeline_contacts ORDER BY updated_at DESC"
-    )).fetchall()
+        "SELECT email, status, assigned_to, notes, follow_up_date, added_at FROM pipeline_contacts WHERE account_id = :aid ORDER BY updated_at DESC"
+    ), {"aid": account_id}).fetchall()
 
     buf = io.StringIO()
     writer = csv.writer(buf)
@@ -2948,7 +2993,7 @@ def export_pipeline(db: Session = Depends(get_db)):
 # ── Admin: fix out-of-sync sequences ─────────────────────────────────────────
 
 @app.post("/api/admin/bulk-update-webinars")
-def bulk_update_webinars(payload: dict, db: Session = Depends(get_db)):
+def bulk_update_webinars(payload: dict, db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):
     """Update title + speaker for multiple webinars by date in one transaction.
     Body: {"updates": [{"date": "YYYY-MM-DD", "title": "...", "speaker_name": "..."}, ...]}
     """
@@ -2962,17 +3007,18 @@ def bulk_update_webinars(payload: dict, db: Session = Depends(get_db)):
         if not date:
             continue
         # find webinar by date
-        w = db.query(models.Webinar).filter(models.Webinar.date == date).first()
+        w = db.query(models.Webinar).filter(models.Webinar.date == date, models.Webinar.account_id == account_id).first()
         if not w:
             continue
         if title:
             w.title = title
         if sp_raw:
             speaker = db.query(models.Speaker).filter(
-                _func.lower(models.Speaker.name) == sp_raw.lower()
+                _func.lower(models.Speaker.name) == sp_raw.lower(),
+                models.Speaker.account_id == account_id,
             ).first()
             if not speaker:
-                speaker = models.Speaker(name=sp_raw)
+                speaker = models.Speaker(name=sp_raw, account_id=account_id)
                 db.add(speaker)
                 db.flush()
             w.speaker_id = speaker.id
@@ -2982,13 +3028,19 @@ def bulk_update_webinars(payload: dict, db: Session = Depends(get_db)):
 
 
 @app.post("/api/admin/bulk-delete-webinars")
-def bulk_delete_webinars(payload: dict, db: Session = Depends(get_db)):
+def bulk_delete_webinars(payload: dict, db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):
     """Delete a list of webinar IDs and all their cascaded data in one transaction."""
     from sqlalchemy import text as _t
     ids = payload.get("ids", [])
     if not ids:
         return {"deleted": 0}
     id_list = ",".join(str(int(i)) for i in ids)
+    # Only delete webinars belonging to this account
+    owned = db.execute(_t(f"SELECT id FROM webinars WHERE id IN ({id_list}) AND account_id = :aid"), {"aid": account_id}).fetchall()
+    owned_ids = [str(r.id) for r in owned]
+    if not owned_ids:
+        return {"deleted": 0}
+    id_list = ",".join(owned_ids)
     db.execute(_t(f"DELETE FROM upload_logs   WHERE webinar_id IN ({id_list})"))
     db.execute(_t(f"DELETE FROM webinar_ads   WHERE webinar_id IN ({id_list})"))
     db.execute(_t(f"DELETE FROM attendances   WHERE webinar_id IN ({id_list})"))
@@ -2999,7 +3051,7 @@ def bulk_delete_webinars(payload: dict, db: Session = Depends(get_db)):
 
 
 @app.post("/api/admin/fix-sequences")
-def fix_sequences(db: Session = Depends(get_db)):
+def fix_sequences(db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):
     """One-time fix for PostgreSQL sequences that fell behind explicit-ID bulk imports."""
     from sqlalchemy import text as _t
     results = {}
@@ -3022,7 +3074,7 @@ def fix_sequences(db: Session = Depends(get_db)):
 
 
 @app.get("/api/new-registrants-per-webinar")
-def get_new_registrants_per_webinar(db: Session = Depends(get_db)):
+def get_new_registrants_per_webinar(db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):
     """For each webinar (sorted by date), count how many registrant emails appear for the FIRST time."""
     from sqlalchemy import text as _t
 
@@ -3030,9 +3082,9 @@ def get_new_registrants_per_webinar(db: Session = Depends(get_db)):
         SELECT w.id AS webinar_id, w.title, w.date, r.email
         FROM webinars w
         JOIN registrations r ON r.webinar_id = w.id
-        WHERE r.email IS NOT NULL AND r.email != ''
+        WHERE r.email IS NOT NULL AND r.email != '' AND w.account_id = :aid
         ORDER BY w.date ASC, w.id ASC
-    """)).fetchall()
+    """), {"aid": account_id}).fetchall()
 
     seen = set()
     webinar_map = {}
@@ -3053,7 +3105,7 @@ def get_new_registrants_per_webinar(db: Session = Depends(get_db)):
 
 # ── AI Intelligence Modules (real ML + AI) ────────────────────────────────────
 
-def _ml_fetch_webinar_stats(db):
+def _ml_fetch_webinar_stats(db, account_id: str = ""):
     """Return list of dicts with title, icp, regs, att_rate for completed webinars."""
     from sqlalchemy import text as _t
     rows = db.execute(_t("""
@@ -3061,9 +3113,9 @@ def _ml_fetch_webinar_stats(db):
                (SELECT COUNT(*) FROM registrations r WHERE r.webinar_id = w.id) AS total_registrations,
                (SELECT COUNT(*) FROM attendances a WHERE a.webinar_id = w.id AND a.attended = TRUE) AS total_attendees
         FROM webinars w
-        WHERE w.status = 'completed'
+        WHERE w.status = 'completed' AND w.account_id = :aid
           AND (SELECT COUNT(*) FROM registrations r WHERE r.webinar_id = w.id) > 0
-    """)).fetchall()
+    """), {"aid": account_id}).fetchall()
     results = []
     for r in rows:
         att_rate = (r.total_attendees / r.total_registrations * 100) if r.total_registrations else 0
@@ -3092,12 +3144,12 @@ def _ml_tfidf_similarity(query: str, corpus: list[str]):
         return [0.0] * len(corpus)
 
 
-def _ml_topic_advisor(db, topic: str):
+def _ml_topic_advisor(db, topic: str, account_id: str = ""):
     """TF-IDF clustering to identify high-performing topic clusters and gaps."""
     import numpy as np
     from sklearn.feature_extraction.text import TfidfVectorizer
     from sklearn.cluster import KMeans
-    stats = _ml_fetch_webinar_stats(db)
+    stats = _ml_fetch_webinar_stats(db, account_id=account_id)
     if len(stats) < 3:
         return {"score": 0, "confidence": 0.0, "method": "insufficient_data",
                 "summary": "Not enough completed webinars to run topic modelling. Need at least 3.",
@@ -3142,10 +3194,10 @@ def _ml_topic_advisor(db, topic: str):
     }
 
 
-def _ml_topic_critique(db, topic: str):
+def _ml_topic_critique(db, topic: str, account_id: str = ""):
     """Cosine similarity to top-performing webinars as a quality signal."""
     import numpy as np
-    stats = _ml_fetch_webinar_stats(db)
+    stats = _ml_fetch_webinar_stats(db, account_id=account_id)
     if len(stats) < 2:
         return {"score": 50, "confidence": 0.3, "method": "insufficient_data",
                 "summary": "Not enough data for similarity scoring.", "insights": []}
@@ -3167,10 +3219,10 @@ def _ml_topic_critique(db, topic: str):
     }
 
 
-def _ml_engagement_patterns(db, topic: str):
+def _ml_engagement_patterns(db, topic: str, account_id: str = ""):
     """Statistical analysis of attendance patterns from actual data."""
     import numpy as np
-    stats = _ml_fetch_webinar_stats(db)
+    stats = _ml_fetch_webinar_stats(db, account_id=account_id)
     if len(stats) < 3:
         return {"score": 0, "confidence": 0.3, "method": "insufficient_data",
                 "summary": "Need at least 3 completed webinars.", "insights": []}
@@ -3206,11 +3258,11 @@ def _ml_engagement_patterns(db, topic: str):
     }
 
 
-def _ml_registration_forecast(db, topic: str):
+def _ml_registration_forecast(db, topic: str, account_id: str = ""):
     """Linear regression forecast based on historical ICP + topic performance."""
     import numpy as np
     from sklearn.linear_model import LinearRegression
-    stats = _ml_fetch_webinar_stats(db)
+    stats = _ml_fetch_webinar_stats(db, account_id=account_id)
     if len(stats) < 3:
         return {"score": 0, "confidence": 0.3, "method": "insufficient_data",
                 "summary": "Need at least 3 completed webinars to train the model.", "predictions": []}
@@ -3243,10 +3295,10 @@ def _ml_registration_forecast(db, topic: str):
     }
 
 
-def _ml_icp_targeting(db, topic: str):
+def _ml_icp_targeting(db, topic: str, account_id: str = ""):
     """Find which ICPs have historically performed best and match this topic."""
     import numpy as np
-    stats = _ml_fetch_webinar_stats(db)
+    stats = _ml_fetch_webinar_stats(db, account_id=account_id)
     if len(stats) < 2:
         return {"score": 0, "confidence": 0.3, "method": "insufficient_data",
                 "summary": "Need more data.", "insights": []}
@@ -3305,7 +3357,7 @@ async def _ml_ai_module(topic: str, system_msg: str, user_msg: str, max_tokens: 
 
 
 @app.post("/api/ml-analysis")
-async def ml_analysis(payload: dict, db: Session = Depends(get_db)):
+async def ml_analysis(payload: dict, db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):
     module    = payload.get("module", "")
     topic     = payload.get("topic", "General Webinar")
     org       = payload.get("org", "our organisation")
@@ -3343,11 +3395,11 @@ async def ml_analysis(payload: dict, db: Session = Depends(get_db)):
     )
 
     # ── Data-driven ML modules ──
-    if module == "topic_prediction":   return _ml_topic_advisor(db, topic)
-    if module == "topic_quality":      return _ml_topic_critique(db, topic)
-    if module == "pattern_detection":  return _ml_engagement_patterns(db, topic)
-    if module == "forecasting":        return _ml_registration_forecast(db, topic)
-    if module == "similarity_engine":  return _ml_icp_targeting(db, topic)
+    if module == "topic_prediction":   return _ml_topic_advisor(db, topic, account_id=account_id)
+    if module == "topic_quality":      return _ml_topic_critique(db, topic, account_id=account_id)
+    if module == "pattern_detection":  return _ml_engagement_patterns(db, topic, account_id=account_id)
+    if module == "forecasting":        return _ml_registration_forecast(db, topic, account_id=account_id)
+    if module == "similarity_engine":  return _ml_icp_targeting(db, topic, account_id=account_id)
 
     # ── AI analysis modules ──
     ai_analysis = {
@@ -3583,15 +3635,15 @@ async def _iq_ai_narrative(stats: dict, webinar_lines: list = None) -> dict:
 
 
 @app.get("/api/ai-intelligence")
-async def ai_intelligence_dashboard(db: Session = Depends(get_db)):
+async def ai_intelligence_dashboard(db: Session = Depends(get_db), account_id: str = Depends(get_account_id)):
     import traceback
     try:
-        return await _ai_intelligence_impl(db)
+        return await _ai_intelligence_impl(db, account_id=account_id)
     except Exception as e:
         traceback.print_exc()
         return JSONResponse(status_code=500, content={"error": str(e), "detail": traceback.format_exc()[-500:]})
 
-async def _ai_intelligence_impl(db):
+async def _ai_intelligence_impl(db, account_id: str = ""):
     import numpy as np
     from sqlalchemy import text as _t
     from sklearn.linear_model import LinearRegression
@@ -3604,10 +3656,10 @@ async def _ai_intelligence_impl(db):
         SELECT w.id, w.title, w.date, w.icp,
                (SELECT COUNT(*) FROM registrations r WHERE r.webinar_id = w.id) AS total_registrations,
                (SELECT COUNT(*) FROM attendances a WHERE a.webinar_id = w.id AND a.attended = TRUE) AS total_attendees
-        FROM webinars w WHERE w.status='completed'
+        FROM webinars w WHERE w.status='completed' AND w.account_id = :aid
           AND (SELECT COUNT(*) FROM registrations r WHERE r.webinar_id = w.id) > 0
         ORDER BY w.date ASC
-    """)).fetchall()
+    """), {"aid": account_id}).fetchall()
 
     if not rows:
         return {"error": "no_data", "message": "No completed webinars yet."}
