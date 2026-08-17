@@ -692,18 +692,23 @@ function renderKpiBanner() {
     },
   ];
 
-  return kpis.map(k => `
-    <div class="kpi-card${k.alert ? ' alert' : ''}" style="background:var(--surface-card);border:1px solid var(--border-subtle);border-radius:1rem;padding:1rem 1.1rem;box-shadow:0 2px 12px rgba(0,0,0,0.06);border-left:4px solid ${k.alert ? '#f43f5e' : 'var(--border-subtle)'}" ${k.label==='Follow-up Pending'?'onclick="showFollowupPendingModal()" style="cursor:pointer;background:var(--surface-card);border:1px solid var(--border-subtle);border-radius:1rem;padding:1rem 1.1rem;box-shadow:0 2px 12px rgba(0,0,0,0.06);border-left:4px solid #f43f5e" title="Click to see pending follow-ups"':''}>
+  const iconColors = ['#6366f1','#f59e0b','#10b981','#8b5cf6','#3b82f6','#ec4899','#f43f5e'];
+  return kpis.map((k, i) => {
+    const accent = k.alert ? '#f43f5e' : iconColors[i % iconColors.length];
+    const isFollowup = k.label === 'Follow-up Pending';
+    return `
+    <div class="kpi-card glass-card-static${k.alert ? ' alert' : ''}" ${isFollowup ? 'onclick="showFollowupPendingModal()" title="Click to see pending follow-ups"' : ''} style="${isFollowup ? 'cursor:pointer;' : ''}">
       <div class="kpi-card-head">
-        <span class="kpi-card-label" style="color:var(--text-muted)">${k.label}${k.tooltip ? `<span class="metric-tooltip" title="${k.tooltip.replace(/"/g,'&quot;')}">&#x24D8;</span>` : ''}</span>
-        <span class="kpi-card-icon">${k.icon}</span>
+        <span class="kpi-card-label">${k.label}${k.tooltip ? `<span class="metric-tooltip" title="${k.tooltip.replace(/"/g,'&quot;')}">&#x24D8;</span>` : ''}</span>
+        <span class="kpi-card-icon-badge" style="background:${accent}15;color:${accent}">${k.icon}</span>
       </div>
-      <div class="kpi-card-value" style="color:var(--text-primary)">${k.value}</div>
+      <div class="kpi-card-value">${k.value}</div>
       <div class="kpi-card-trend ${k.trendUp === true ? 'trend-up' : k.trendUp === false ? 'trend-down' : 'trend-neutral'}">
         ${k.arrow || ''}
         <span>${k.trend}</span>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 async function showFollowupPendingModal() {
@@ -778,7 +783,7 @@ function renderStatusBreakdown() {
   const upcoming  = S.webinars.filter(w => w.status === 'upcoming').length;
   const cancelled = S.webinars.filter(w => w.status === 'cancelled').length;
   const total = completed + upcoming + cancelled;
-  if (total === 0) return `<div class="status-donut-wrap">
+  if (total === 0) return `<div class="status-donut-wrap glass-card-static">
     <div class="status-donut-title">Status Breakdown</div>
     <div class="empty-state" style="padding:30px 0;border:none">
       <div class="empty-icon" style="font-size:28px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/><line x1="2" y1="20" x2="22" y2="20"/></svg></div>
@@ -814,7 +819,7 @@ function renderStatusBreakdown() {
       <span class="sdl-pct">${(s.n/total*100).toFixed(0)}%</span>
     </div>`).join('');
 
-  return `<div class="status-donut-wrap">
+  return `<div class="status-donut-wrap glass-card-static">
     <div class="status-donut-title">Status Breakdown</div>
     <div class="status-donut-body">
       <svg viewBox="0 0 120 120" width="120" height="120" style="flex-shrink:0">
@@ -885,7 +890,7 @@ function renderAttendanceChart() {
     </circle>`;
   }).join('');
 
-  return `<div class="dash-chart-wrap">
+  return `<div class="dash-chart-wrap glass-card-static">
     <div class="dash-chart-head">
       <div class="dash-chart-title">Attendance Rate Trend</div>
       <div class="dash-chart-sub">Last ${data.length} webinar${data.length !== 1 ? 's' : ''} with data · by date</div>
@@ -992,7 +997,7 @@ function renderHome() {
 
   if (S.webinars.length === 0) {
     // Truly empty - first-time user
-    mainContent = `<div class="empty-state-v2">
+    mainContent = `<div class="empty-state-v2 glass-card-static">
       <div class="es-icon">
         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 12h8M12 8v8"/></svg>
       </div>
@@ -1115,7 +1120,7 @@ function renderHome() {
     mainContent = `
       <div class="dash-bottom-row">
         <!-- Left: Webinar table -->
-        <div class="wb-list-card">
+        <div class="wb-list-card glass-card-static">
           <div class="wb-list-card-head">
             <div class="wb-list-card-title">All Webinars <span style="font-size:12px;color:var(--text-3);font-weight:400">${countLabel}</span></div>
             <input class="wb-list-search" placeholder="Search webinars…" oninput="onSearch(this.value)" value="${esc(S.search)}" />
@@ -1153,7 +1158,7 @@ function renderHome() {
           </div>`}
         </div>
         <!-- Right: Activity feed -->
-        <div class="act-feed-card">
+        <div class="act-feed-card glass-card-static">
           <div class="act-feed-head">
             <span class="act-feed-title">Activity</span>
           </div>
@@ -1346,7 +1351,7 @@ function _drawWebinarDetail(w) {
 
   const uploadSectionHTML = `
     <div class="sec-hd" style="margin-bottom:12px">
-      <span class="sec-title">Data Upload</span>
+      <span class="sec-title" style="color:var(--text-primary)">Data Upload</span>
       <span style="font-size:12px;color:var(--text-3)">Upload CSV or Excel files</span>
     </div>
     <div class="upload-section">
@@ -1478,7 +1483,7 @@ function _drawWebinarDetail(w) {
       ${(w.total_registrations > 0 || w.total_attendees > 0) ? `
       <!-- Analysis -->
       <div class="sec-hd" style="margin-bottom:12px">
-        <span class="sec-title">Analysis</span>
+        <span class="sec-title" style="color:var(--text-primary)">Analysis</span>
       </div>
       ${analysisHTML}
 
@@ -1533,7 +1538,7 @@ function _drawWebinarDetail(w) {
       <!-- Ad Creatives section -->
       <div class="ads-section">
         <div class="sec-hd" style="margin-bottom:16px">
-          <span class="sec-title">Ad Creatives</span>
+          <span class="sec-title" style="color:var(--text-primary)">Ad Creatives</span>
           <span style="font-size:12px;color:var(--text-3)">${(w.ads||[]).length} ad${(w.ads||[]).length !== 1 ? 's' : ''}</span>
           <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="openAdModal(${w.id})">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -2183,12 +2188,12 @@ async function renderSpeakers() {
   }).join('');
 
   const sect = document.getElementById('spk-perf-section');
-  if (sect) sect.outerHTML = `<div class="spk-grid">${cards}</div>
+  if (sect) sect.outerHTML = `<div class="spk-grid">${cards || '<div class="glass-card-static" style="background:var(--surface-card);border:1px solid var(--border-subtle);border-radius:1rem;padding:3rem;text-align:center;grid-column:1/-1"><div style="font-size:2rem;opacity:0.3;margin-bottom:0.75rem">🎙️</div><div style="color:var(--text-muted);font-size:14px">No speakers added yet. Create a webinar and assign a speaker to get started.</div></div>'}</div>
     <div style="margin-top:36px">
-      <h2 class="sec-title" style="margin-bottom:16px">Performance Detail</h2>
+      <h2 class="sec-title" style="color:var(--text-primary);margin-bottom:16px">Performance Detail</h2>
       ${_renderSpeakerIntel({ speaker_performance: Object.values(perfMap) })}
     </div>
-    ${siCards ? `<div style="margin-top:36px"><h2 class="sec-title" style="margin-bottom:16px">Speaker Intelligence</h2><div class="spk-insight-grid">${siCards}</div></div>` : ''}`;
+    ${siCards ? `<div style="margin-top:36px"><h2 class="sec-title" style="color:var(--text-primary);margin-bottom:16px">Speaker Intelligence</h2><div class="spk-insight-grid">${siCards}</div></div>` : ''}`;
 }
 
 /* ── Speaker detail ─────────────────────────────────────────────────────── */
@@ -2256,7 +2261,7 @@ async function renderSpeakerDetail(id) {
           </div>
         </div>
         <div class="sec-hd">
-          <span class="sec-title">Webinar History</span>
+          <span class="sec-title" style="color:var(--text-primary)">Webinar History</span>
           <span style="font-size:12px;color:var(--text-3)">${sp.total_webinars} total</span>
         </div>
         ${wbItems || '<div class="empty-state" style="background:var(--surface-card);border:1px solid var(--border-subtle);border-radius:1rem;padding:2rem;text-align:center"><div class="empty-icon"><svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" opacity="0.25"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg></div><div class="empty-title" style="color:var(--text-primary)">No webinars yet</div></div>'}
@@ -3063,7 +3068,7 @@ async function loadWebinarFunnel(id, w) {
       }).join('');
       sect.innerHTML = `
         <div class="funnel-section">
-          <div class="sec-hd"><span class="sec-title">Webinar Funnel</span></div>
+          <div class="sec-hd"><span class="sec-title" style="color:var(--text-primary)">Webinar Funnel</span></div>
           <div class="funnel-stages">${stageItems}</div>
           ${funnel.insight ? `<div class="funnel-insight">${escAI(funnel.insight)}</div>` : ''}
         </div>`;
@@ -3294,13 +3299,13 @@ function renderAIPanel(panel, data) {
     const w = Math.round(val / max * 100);
     const grad = isThis
       ? `linear-gradient(90deg,${gradeColor}cc,${gradeColor})`
-      : 'linear-gradient(90deg,#94a3b8,#cbd5e1)';
+      : 'linear-gradient(90deg,var(--text-muted,#94a3b8),var(--border-default,#cbd5e1))';
     return `<div class="aip-bench-row${isThis?' aip-bench-this':''}">
       <span class="aip-bench-lbl">${label}</span>
       <div class="aip-bench-track">
         <div class="aip-bench-fill" style="background:${grad}" data-w="${w}"></div>
       </div>
-      <span class="aip-bench-val" style="color:${isThis?gradeColor:'#475569'}">${val.toFixed(1)}%</span>
+      <span class="aip-bench-val" style="color:${isThis?gradeColor:'var(--text-secondary,#475569)'}">${val.toFixed(1)}%</span>
     </div>`;
   }
 
@@ -4758,9 +4763,9 @@ function _drawPipeline(contacts) {
 
   const kpiHtml = `
     <div class="pipeline-kpis">
-      <div class="pipeline-kpi ${_pipelineFilter==='all'?'active':''}" onclick="_pipelineFilter='all';_drawPipeline(_pipelineCache)" style="cursor:pointer">
-        <div class="pipeline-kpi-val">${contacts.length}</div>
-        <div class="pipeline-kpi-lbl">Total</div>
+      <div class="pipeline-kpi ${_pipelineFilter==='all'?'active':''}" onclick="_pipelineFilter='all';_drawPipeline(_pipelineCache)" style="cursor:pointer;background:var(--surface-card);border:1px solid var(--border-subtle);border-radius:1rem;padding:0.75rem 1rem;box-shadow:0 2px 12px rgba(0,0,0,0.06)">
+        <div class="pipeline-kpi-val" style="font-size:1.5rem;font-weight:800;color:var(--text-primary)">${contacts.length}</div>
+        <div class="pipeline-kpi-lbl" style="color:var(--text-muted)">Total</div>
       </div>
       ${Object.entries(PIPELINE_STATUS_META).map(([k,m]) => `
         <div class="pipeline-kpi ${_pipelineFilter===k?'active':''}" onclick="_pipelineFilter='${k}';_drawPipeline(_pipelineCache)" style="cursor:pointer;--kpi-color:${m.color};background:var(--surface-card);border:1px solid var(--border-subtle);border-radius:1rem;padding:0.75rem 1rem;box-shadow:0 2px 12px rgba(0,0,0,0.06)">
@@ -6753,7 +6758,7 @@ function _renderIQDashboard(d) {
     </div>`) : '';
 
   const refreshBtn = `<div style="text-align:right;margin-top:8px;">
-    <button onclick="_loadIQDashboard()" class="btn-secondary" style="font-size:12px;">↻ Refresh Analysis</button>
+    <button onclick="_loadIQDashboard()" class="btn btn-secondary" style="background:rgba(255,255,255,0.70);border:1px solid var(--border-subtle);border-radius:0.875rem;font-weight:600" style="font-size:12px;">↻ Refresh Analysis</button>
   </div>`;
 
   return s1 + s2 + s3 + s4 + s5 + s6 + s7 + s8 + refreshBtn;
@@ -6765,11 +6770,11 @@ function _mlModuleCard(m, results) {
   const tagBg    = m.tag==='ML' ? '#eef2ff' : m.tag==='Stats' ? '#ecfdf5' : '#fffbeb';
   const tagEl = `<span style="font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;background:${tagBg};color:${tagColor};">${m.tag}</span>`;
   let body = `<p style="color:var(--text-muted);font-size:12px;margin:0 0 12px;line-height:1.4;">${m.desc}</p>
-    <button onclick="_mlRunModule('${m.id}')" class="btn-secondary" style="font-size:12px;">Run</button>`;
+    <button onclick="_mlRunModule('${m.id}')" class="btn btn-secondary" style="background:rgba(255,255,255,0.70);border:1px solid var(--border-subtle);border-radius:0.875rem;font-weight:600" style="font-size:12px;">Run</button>`;
   if (r === 'loading') {
     body = `<div style="display:flex;align-items:center;gap:8px;color:var(--text-muted);font-size:13px;"><span class="spinner" style="width:14px;height:14px;border-width:2px;"></span> Running…</div>`;
   } else if (r && r.error) {
-    body = `<p style="color:#ef4444;font-size:12px;">⚠ ${r.error}</p><button onclick="_mlRunModule('${m.id}')" class="btn-secondary" style="font-size:12px;">Retry</button>`;
+    body = `<p style="color:#ef4444;font-size:12px;">⚠ ${r.error}</p><button onclick="_mlRunModule('${m.id}')" class="btn btn-secondary" style="background:rgba(255,255,255,0.70);border:1px solid var(--border-subtle);border-radius:0.875rem;font-weight:600" style="font-size:12px;">Retry</button>`;
   } else if (r) {
     body = _mlRenderResult(m.id, r);
   }
@@ -6783,11 +6788,11 @@ function _mlModuleCard(m, results) {
 function _commCard(m, results) {
   const r = results[m.id];
   let body = `<p style="color:var(--text-muted);font-size:12px;margin:0 0 12px;line-height:1.4;">${m.desc}</p>
-    <button onclick="_commRunModule('${m.id}')" class="btn-secondary" style="font-size:12px;">Generate</button>`;
+    <button onclick="_commRunModule('${m.id}')" class="btn btn-secondary" style="background:rgba(255,255,255,0.70);border:1px solid var(--border-subtle);border-radius:0.875rem;font-weight:600" style="font-size:12px;">Generate</button>`;
   if (r === 'loading') {
     body = `<div style="display:flex;align-items:center;gap:8px;color:var(--text-muted);font-size:13px;"><span class="spinner" style="width:14px;height:14px;border-width:2px;"></span> Generating…</div>`;
   } else if (r && r.error) {
-    body = `<p style="color:#ef4444;font-size:12px;">⚠ ${r.error}</p><button onclick="_commRunModule('${m.id}')" class="btn-secondary" style="font-size:12px;">Retry</button>`;
+    body = `<p style="color:#ef4444;font-size:12px;">⚠ ${r.error}</p><button onclick="_commRunModule('${m.id}')" class="btn btn-secondary" style="background:rgba(255,255,255,0.70);border:1px solid var(--border-subtle);border-radius:0.875rem;font-weight:600" style="font-size:12px;">Retry</button>`;
   } else if (r) {
     body = _commRenderResult(m.id, r);
   }
@@ -6885,7 +6890,7 @@ function _mlRenderResult(moduleId, r) {
   const tsML = _generatedAt[moduleId];
   const tsMLStr = tsML ? tsML.toLocaleString('en-IN', {day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
   html += `<div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;flex-wrap:wrap;gap:6px;">
-    <button onclick="_mlRunModule('${moduleId}')" class="btn-secondary" style="font-size:11px;">&#8635; Regenerate</button>
+    <button onclick="_mlRunModule('${moduleId}')" class="btn btn-secondary" style="background:rgba(255,255,255,0.70);border:1px solid var(--border-subtle);border-radius:0.875rem;font-weight:600" style="font-size:11px;">&#8635; Regenerate</button>
     ${tsMLStr ? `<span style="font-size:10px;color:var(--rh-text-4,#aaa);">Generated ${tsMLStr}</span>` : ''}
   </div>`;
   return html;
