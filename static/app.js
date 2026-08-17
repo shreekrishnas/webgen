@@ -826,9 +826,9 @@ function renderStatusBreakdown() {
         <circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="var(--border)" stroke-width="14"/>
         ${circles}
         <text x="${cx}" y="${cy-4}" text-anchor="middle" fill="var(--text)" font-size="18"
-          font-weight="800" font-family="var(--font)">${total}</text>
+          font-weight="800" font-family="var(--font-ui)">${total}</text>
         <text x="${cx}" y="${cy+10}" text-anchor="middle" fill="var(--text-3)" font-size="9"
-          font-family="var(--font)">total</text>
+          font-family="var(--font-ui)">total</text>
       </svg>
       <div class="status-donut-legend">${legendItems}</div>
     </div>
@@ -866,14 +866,14 @@ function renderAttendanceChart() {
     return `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${W - padR}" y2="${y.toFixed(1)}"
       stroke="rgba(79,70,229,0.07)" stroke-width="1" stroke-dasharray="${v === 0 ? '0' : '4,4'}"/>
     <text x="${(padL - 8).toFixed(1)}" y="${(y + 4).toFixed(1)}" text-anchor="end"
-      fill="var(--text-3)" font-size="9" font-family="var(--font)">${v}%</text>`;
+      fill="var(--text-3)" font-size="9" font-family="var(--font-ui)">${v}%</text>`;
   }).join('');
 
   const xLabels = data.map((d, i) => {
     if (data.length > 8 && i % 2 !== 0) return '';
     const label = new Date(d.date + 'T00:00:00').toLocaleDateString('en-IN', { month: 'short', day: 'numeric' });
     return `<text x="${xPos(i).toFixed(1)}" y="${(H - 8).toFixed(1)}" text-anchor="middle"
-      fill="var(--text-3)" font-size="9" font-family="var(--font)">${label}</text>`;
+      fill="var(--text-3)" font-size="9" font-family="var(--font-ui)">${label}</text>`;
   }).join('');
 
   const dots = data.map((d, i) => {
@@ -906,7 +906,7 @@ function renderAttendanceChart() {
       <!-- Industry benchmark at 40% -->
       <line x1="${padL}" y1="${benchmarkY.toFixed(1)}" x2="${W - padR}" y2="${benchmarkY.toFixed(1)}"
         stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="6,4" opacity="0.7"/>
-      <text x="${(W - padR + 4).toFixed(1)}" y="${(benchmarkY + 4).toFixed(1)}" fill="#f59e0b" font-size="9" font-family="var(--font)" font-weight="600">40% benchmark</text>
+      <text x="${(W - padR + 4).toFixed(1)}" y="${(benchmarkY + 4).toFixed(1)}" fill="#f59e0b" font-size="9" font-family="var(--font-ui)" font-weight="600">40% benchmark</text>
       <path d="${areaPath}" fill="url(#atCh)"/>
       <polyline points="${points}" fill="none" stroke="var(--accent)" stroke-width="2"
         stroke-linecap="round" stroke-linejoin="round"/>
@@ -1634,12 +1634,12 @@ function renderTwinLineChart(data) {
     const v = maxVal * f, y = yPos(v);
     const label = v >= 1000 ? `${(v/1000).toFixed(0)}k` : Math.round(v).toString();
     return `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${W-padR}" y2="${y.toFixed(1)}" stroke="rgba(79,70,229,0.07)" stroke-width="1" stroke-dasharray="4,4"/>
-      <text x="${(padL-6).toFixed(1)}" y="${(y+4).toFixed(1)}" text-anchor="end" fill="var(--text-3)" font-size="9" font-family="var(--font)">${label}</text>`;
+      <text x="${(padL-6).toFixed(1)}" y="${(y+4).toFixed(1)}" text-anchor="end" fill="var(--text-3)" font-size="9" font-family="var(--font-ui)">${label}</text>`;
   }).join('');
   const xLabels = data.map((d,i) => {
     if (data.length > 7 && i % 2 !== 0) return '';
     const lbl = new Date(d.date+'T00:00:00').toLocaleDateString('en-IN', { month:'short', day:'numeric' });
-    return `<text x="${xPos(i).toFixed(1)}" y="${(H-6).toFixed(1)}" text-anchor="middle" fill="var(--text-3)" font-size="9" font-family="var(--font)">${lbl}</text>`;
+    return `<text x="${xPos(i).toFixed(1)}" y="${(H-6).toFixed(1)}" text-anchor="middle" fill="var(--text-3)" font-size="9" font-family="var(--font-ui)">${lbl}</text>`;
   }).join('');
 
   return `<div class="an-trend-card">
@@ -3345,8 +3345,8 @@ function renderAIPanel(panel, data) {
             stroke-linecap="round" stroke-dasharray="${ringFill} ${RING_CIRC}"
             transform="rotate(-90 60 60)" filter="url(#glow-${a.grade})"
             style="transition:stroke-dasharray 1.2s cubic-bezier(.4,0,.2,1)"/>
-          <text x="60" y="54" text-anchor="middle" fill="${gradeColor}" font-size="32" font-weight="800" font-family="system-ui">${esc(a.grade)}</text>
-          <text x="60" y="72" text-anchor="middle" fill="rgba(255,255,255,0.35)" font-size="9.5" font-family="system-ui" letter-spacing="1.5">${esc(a.grade_label).toUpperCase()}</text>
+          <text x="60" y="54" text-anchor="middle" fill="${gradeColor}" font-size="32" font-weight="800" font-family="var(--font-ui)">${esc(a.grade)}</text>
+          <text x="60" y="72" text-anchor="middle" fill="rgba(255,255,255,0.35)" font-size="9.5" font-family="var(--font-ui)" letter-spacing="1.5">${esc(a.grade_label).toUpperCase()}</text>
         </svg>
         <div class="aip-grade-glow" style="background:${glow}"></div>
       </div>
@@ -3969,7 +3969,7 @@ async function _renderAIInsights(body, generate=false) {
       <div class="intel-section">
         <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;gap:16px;text-align:center;">
           <div style="width:56px;height:56px;background:linear-gradient(135deg,#6366f1,#8b5cf6);border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:26px;">✨</div>
-          <div style="font-weight:700;font-size:18px;color:var(--rh-text-1);font-family:var(--rh-serif);">AI Insights</div>
+          <div style="font-weight:700;font-size:18px;color:var(--rh-text-1);font-family:var(--font-serif);">AI Insights</div>
           <div style="font-size:13.5px;color:var(--rh-text-2);max-width:380px;line-height:1.7;">Claude analyses all your webinars, speaker performance, ICP patterns, and attendance trends to surface actionable insights.</div>
           <button onclick="_generateAIInsights()" class="btn btn-primary" style="font-size:14px;padding:12px 32px;">Generate Insights</button>
         </div>
@@ -5394,7 +5394,7 @@ function confirmDeleteWebinar(id, title) {
   overlay.innerHTML = `
     <div style="background:var(--rh-surface);border:1px solid var(--rh-border);border-radius:14px;padding:28px 28px 22px;max-width:420px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.2);">
       <div style="font-size:22px;margin-bottom:10px;">🗑️</div>
-      <div style="font-size:16px;font-weight:700;color:var(--rh-text-1);margin-bottom:8px;font-family:var(--rh-serif);">Delete "${esc(title)}"?</div>
+      <div style="font-size:16px;font-weight:700;color:var(--rh-text-1);margin-bottom:8px;font-family:var(--font-serif);">Delete "${esc(title)}"?</div>
       <div style="font-size:13px;color:var(--rh-text-2);margin-bottom:22px;line-height:1.6;">This will permanently remove all registration and attendance data for this webinar. This action cannot be undone.</div>
       <div style="display:flex;gap:10px;justify-content:flex-end;">
         <button onclick="document.getElementById('confirm-overlay').remove()" class="btn btn-ghost">Cancel</button>
@@ -5576,7 +5576,7 @@ async function exportWebinarReport(webinarId, title) {
 <title>Webinar Report — ${esc(w.title||title)}</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:'Segoe UI',Arial,sans-serif;max-width:860px;margin:0 auto;padding:32px 40px;color:#111827;line-height:1.65;font-size:14px}
+  body{font-family:'Inter','Segoe UI',Arial,sans-serif;max-width:860px;margin:0 auto;padding:32px 40px;color:#111827;line-height:1.65;font-size:14px}
   .cover{text-align:center;padding:48px 0 36px;border-bottom:2px solid #6366f1;margin-bottom:32px}
   .cover-logo{font-size:13px;font-weight:700;color:#6366f1;letter-spacing:2px;text-transform:uppercase;margin-bottom:12px}
   .cover-title{font-size:24px;font-weight:800;color:#111827;margin-bottom:6px;line-height:1.3}
@@ -6396,7 +6396,7 @@ function renderMLAnalysis() {
       <div style="margin-bottom:4px;">
         <label style="font-size:11px;font-weight:600;color:var(--rh-text-3);display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:.04em;">Description / Extra Context</label>
         <textarea id="ml-desc-input" placeholder="e.g. This webinar targets NRI investors exploring repatriation options. The speaker will cover FEMA regulations, NRE/NRO account strategies, and tax implications. Expected audience: 200+ professionals with ₹1Cr+ investable assets."
-          style="width:100%;padding:9px 12px;border-radius:8px;border:1px solid var(--rh-border);background:var(--rh-surface);color:var(--rh-text-1);font-size:13px;box-sizing:border-box;resize:vertical;min-height:72px;line-height:1.6;font-family:var(--rh-sans);outline:none;transition:border-color .15s;"
+          style="width:100%;padding:9px 12px;border-radius:8px;border:1px solid var(--rh-border);background:var(--rh-surface);color:var(--rh-text-1);font-size:13px;box-sizing:border-box;resize:vertical;min-height:72px;line-height:1.6;font-family:var(--font-ui);outline:none;transition:border-color .15s;"
           oninput="_mlDesc=this.value"
           onfocus="this.style.borderColor='var(--rh-ink)'" onblur="this.style.borderColor='var(--rh-border)'"
         >${esc(_mlDesc)}</textarea>
@@ -6407,7 +6407,7 @@ function renderMLAnalysis() {
     <div style="display:flex;gap:0;border-bottom:2px solid var(--rh-border);margin-bottom:20px;margin-top:20px;">
       ${['analysis','emails','whatsapp'].map(t => `
         <button onclick="_aiSetTab('${t}')" class="aitab-btn" data-tab="${t}"
-          style="padding:10px 22px;font-size:13px;font-weight:600;border:none;background:none;cursor:pointer;font-family:var(--rh-sans);
+          style="padding:10px 22px;font-size:13px;font-weight:600;border:none;background:none;cursor:pointer;font-family:var(--font-ui);
             border-bottom:2px solid ${_aiTab===t?'var(--rh-red)':'transparent'};
             color:${_aiTab===t?'var(--rh-red)':'var(--rh-text-3)'};margin-bottom:-2px;transition:color .15s;">
           ${{analysis:'Intelligence',emails:'Zoho Mail',whatsapp:'WhatsApp'}[t]}
@@ -6455,7 +6455,7 @@ function _aiTabContent() {
     }
     return `<div id="iq-dashboard" style="text-align:center;padding:48px 20px;">
       <div style="width:56px;height:56px;border-radius:16px;background:rgba(124,58,237,0.08);border:1.5px solid rgba(124,58,237,0.2);display:flex;align-items:center;justify-content:center;margin:0 auto 20px;font-size:26px;">📊</div>
-      <div style="font-size:19px;font-weight:700;color:var(--rh-text-1);margin-bottom:8px;font-family:var(--rh-serif);">Programme Intelligence</div>
+      <div style="font-size:19px;font-weight:700;color:var(--rh-text-1);margin-bottom:8px;font-family:var(--font-serif);">Programme Intelligence</div>
       <div style="font-size:13.5px;color:var(--rh-text-2);margin-bottom:28px;max-width:400px;margin-left:auto;margin-right:auto;line-height:1.7;">
         ML analysis across your <strong>${S.webinars.filter(w=>w.status==='completed').length} completed webinars</strong> with AI-generated insights and forecasts.
       </div>
